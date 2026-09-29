@@ -75,3 +75,20 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 }
+
+@keyframes progress-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(30%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.animate-progress {
+  animation: progress-bar 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
