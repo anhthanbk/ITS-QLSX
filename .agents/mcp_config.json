@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "serverUrl": "REPLACE_WITH_SUPABASE_MCP_SERVER_URL"
+    },
+    "github": {
+      "serverUrl": "REPLACE_WITH_GITHUB_MCP_SERVER_URL"
+    },
+    "vercel": {
+      "serverUrl": "REPLACE_WITH_VERCEL_MCP_SERVER_URL"
+    }
+  }
+}
