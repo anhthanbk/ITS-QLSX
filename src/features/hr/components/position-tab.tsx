@@ -1,22 +1,37 @@
 import React, { useState } from 'react';
-import { Briefcase, Plus, X, Loader2 } from 'lucide-react';
+import { Briefcase, Plus, X, Loader2, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
-import { usePositions, useCreatePosition } from '../hooks/use-positions';
+import {
+  usePositions,
+  useCreatePosition,
+  useUpdatePosition,
+  useDeletePosition,
+} from '../hooks/use-positions';
 import { useDepartments } from '../hooks/use-departments';
 import { positionFormSchema, type PositionFormValues } from '../validation/hr-schemas';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import type { Position } from '../types';
 
 export const PositionTab: React.FC = () => {
   const [selectedDeptId, setSelectedDeptId] = useState<string>('all');
   const { data: positions, isLoading } = usePositions(selectedDeptId);
   const { data: departments } = useDepartments();
+
   const createMutation = useCreatePosition();
+  const updateMutation = useUpdatePosition();
+  const deleteMutation = useDeletePosition();
+
   const { hasRole, hasPermission } = useAuth();
-  const canManage = hasRole('admin') || hasPermission('hr.department.manage') || hasPermission('master_data.manage');
+  const canManage =
+    hasRole('admin') ||
+    hasPermission('hr.department.manage') ||
+    hasPermission('master_data.manage');
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingPos, setEditingPos] = useState<Position | null>(null);
+  const [deletingPos, setDeletingPos] = useState<Position | null>(null);
 
   const {
     register,
@@ -33,15 +48,54 @@ export const PositionTab: React.FC = () => {
     },
   });
 
+  const handleOpenCreate = () => {
+    setEditingPos(null);
+    reset({
+      code: '',
+      title: '',
+      department_id: departments?.[0]?.id || '',
+      level: 1,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleOpenEdit = (pos: Position) => {
+    setEditingPos(pos);
+    reset({
+      code: pos.code,
+      title: pos.title,
+      department_id: pos.department_id,
+      level: pos.level,
+    });
+    setIsDialogOpen(true);
+  };
+
   const onSubmit = async (values: PositionFormValues) => {
     try {
-      await createMutation.mutateAsync(values);
+      if (editingPos) {
+        await updateMutation.mutateAsync({ id: editingPos.id, values });
+      } else {
+        await createMutation.mutateAsync(values);
+      }
       reset();
       setIsDialogOpen(false);
+      setEditingPos(null);
     } catch {
-      // Error is caught and surfaced via useCreatePosition onError toast
+      // Error is caught and surfaced via onError toast
     }
   };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingPos) return;
+    try {
+      await deleteMutation.mutateAsync(deletingPos.id);
+      setDeletingPos(null);
+    } catch {
+      // Error is surfaced via onError toast
+    }
+  };
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
     <div className="space-y-4">
@@ -71,7 +125,8 @@ export const PositionTab: React.FC = () => {
           {canManage && (
             <Button
               size="sm"
-              onClick={() => setIsDialogOpen(true)}
+              onClick={handleOpenCreate}
+              id="add-position-btn"
               className="flex items-center gap-1.5"
             >
               <Plus className="h-4 w-4" />
@@ -93,6 +148,7 @@ export const PositionTab: React.FC = () => {
                 <th className="px-3 py-3.5">Tên chức danh</th>
                 <th className="px-3 py-3.5">Thuộc phòng ban</th>
                 <th className="px-3 py-3.5">Cấp bậc</th>
+                {canManage && <th className="px-3 py-3.5 text-right sm:pr-6">Thao tác</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -117,6 +173,30 @@ export const PositionTab: React.FC = () => {
                       Cấp {pos.level}
                     </span>
                   </td>
+                  {canManage && (
+                    <td className="px-3 py-3.5 text-right sm:pr-6">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleOpenEdit(pos)}
+                          title="Chỉnh sửa chức danh"
+                          className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeletingPos(pos)}
+                          title="Xóa chức danh"
+                          className="h-7 w-7 rounded-md text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -124,7 +204,7 @@ export const PositionTab: React.FC = () => {
         </div>
       )}
 
-      {/* Dialog create position */}
+      {/* Dialog Create / Edit position */}
       {isDialogOpen && (
         <div
           role="dialog"
@@ -137,7 +217,9 @@ export const PositionTab: React.FC = () => {
           />
           <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in-50 zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-border">
-              <h3 className="text-sm font-bold text-foreground">Thêm Chức Danh Mới</h3>
+              <h3 className="text-sm font-bold text-foreground">
+                {editingPos ? 'Chỉnh Sửa Chức Danh' : 'Thêm Chức Danh Mới'}
+              </h3>
               <Button
                 variant="ghost"
                 size="icon"
@@ -202,19 +284,19 @@ export const PositionTab: React.FC = () => {
 
               <div className="space-y-1">
                 <label htmlFor="pos-level" className="text-xs font-semibold text-foreground">
-                  Cấp bậc (1 - 10)
+                  Cấp bậc chức vụ (1: Nhân viên, 5: Giám đốc)
                 </label>
-                <input
+                <select
                   id="pos-level"
-                  type="number"
-                  min="1"
-                  max="10"
-                  {...register('level')}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                {errors.level && (
-                  <p className="text-[11px] text-destructive">{errors.level.message}</p>
-                )}
+                  {...register('level', { valueAsNumber: true })}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value={1}>Cấp 1 — Nhân viên / Công nhân</option>
+                  <option value={2}>Cấp 2 — Chuyên viên / Kỹ thuật viên</option>
+                  <option value={3}>Cấp 3 — Trưởng ca / Tổ trưởng</option>
+                  <option value={4}>Cấp 4 — Quản đốc / Trưởng phòng</option>
+                  <option value={5}>Cấp 5 — Giám đốc / Ban điều hành</option>
+                </select>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
@@ -229,14 +311,65 @@ export const PositionTab: React.FC = () => {
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={createMutation.isPending}
+                  disabled={isSaving}
                   className="flex items-center gap-1.5"
                 >
-                  {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  <span>Tạo chức danh</span>
+                  {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{editingPos ? 'Lưu thay đổi' : 'Tạo chức danh'}</span>
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingPos && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+        >
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setDeletingPos(null)}
+          />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-destructive/20 bg-card p-6 shadow-2xl animate-in fade-in-50 zoom-in-95">
+            <div className="flex items-center gap-3 text-destructive">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Xác Nhận Xóa Chức Danh</h3>
+                <p className="text-xs text-muted-foreground font-mono">{deletingPos.code}</p>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
+              Bạn có chắc chắn muốn xóa chức danh <strong className="text-foreground">{deletingPos.title}</strong>?
+              Hành động này không thể hoàn tác nếu chức danh chưa được gán cho nhân viên nào.
+            </p>
+
+            <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeletingPos(null)}
+                disabled={deleteMutation.isPending}
+              >
+                Hủy
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteConfirm}
+                disabled={deleteMutation.isPending}
+                className="flex items-center gap-1.5"
+              >
+                {deleteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                <span>Xóa chức danh</span>
+              </Button>
+            </div>
           </div>
         </div>
       )}

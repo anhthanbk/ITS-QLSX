@@ -381,3 +381,66 @@ export async function createPosition(values: PositionFormValues): Promise<Positi
 
   return data as unknown as Position;
 }
+
+/**
+ * Deletes a department with referential integrity error handling.
+ */
+export async function deleteDepartment(id: string): Promise<void> {
+  const { error } = await supabase.from('departments').delete().eq('id', id);
+
+  if (error) {
+    console.error(`Failed to delete department ${id}:`, error);
+    if (error.code === '23503') {
+      throw new Error(
+        'Không thể xóa phòng ban do đang có chức danh, nhân viên hoặc máy móc liên kết. Vui lòng chuyển hoặc xóa liên kết trước.',
+      );
+    }
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Updates a position.
+ */
+export async function updatePosition(
+  id: string,
+  values: PositionFormValues,
+): Promise<Position> {
+  const payload = {
+    code: values.code.trim().toUpperCase(),
+    title: values.title.trim(),
+    department_id: values.department_id,
+    level: values.level,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('positions')
+    .update(payload)
+    .eq('id', id)
+    .select('id, code, title, department_id, level, created_at, updated_at')
+    .single();
+
+  if (error) {
+    console.error(`Failed to update position ${id}:`, error);
+    throw new Error(error.message);
+  }
+
+  return data as unknown as Position;
+}
+
+/**
+ * Deletes a position with referential integrity error handling.
+ */
+export async function deletePosition(id: string): Promise<void> {
+  const { error } = await supabase.from('positions').delete().eq('id', id);
+
+  if (error) {
+    console.error(`Failed to delete position ${id}:`, error);
+    if (error.code === '23503') {
+      throw new Error('Không thể xóa chức danh do đang có nhân viên giữ vị trí này.');
+    }
+    throw new Error(error.message);
+  }
+}
+

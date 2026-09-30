@@ -124,3 +124,38 @@ describe('EmployeeTable UI Component', () => {
     expect(onViewDetail).toHaveBeenCalledWith(mockEmployees[0]);
   });
 });
+
+describe('DepartmentTab and PositionTab Admin Permissions', () => {
+  it('renders edit and delete buttons for departments when user is admin', async () => {
+    // Dynamically mock the hooks for DepartmentTab
+    vi.doMock('@/features/hr/hooks/use-departments', () => ({
+      useDepartments: () => ({
+        data: [
+          {
+            id: 'dept-1',
+            code: 'SX',
+            name: 'Phòng Sản Xuất',
+            status: 'active',
+            manager: null,
+            manager_employee_id: null,
+            parent_id: null,
+            created_at: '2026-01-01',
+            updated_at: '2026-01-01',
+          },
+        ],
+        isLoading: false,
+      }),
+      useCreateDepartment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      useUpdateDepartment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      useDeleteDepartment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    }));
+
+    const { DepartmentTab } = await import('@/features/hr/components/department-tab');
+    render(<DepartmentTab />);
+
+    expect(screen.getByText('Phòng Sản Xuất')).toBeInTheDocument();
+    expect(screen.getByTitle('Chỉnh sửa phòng ban')).toBeInTheDocument();
+    expect(screen.getByTitle('Xóa phòng ban')).toBeInTheDocument();
+  });
+});
+

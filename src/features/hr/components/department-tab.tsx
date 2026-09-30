@@ -1,19 +1,33 @@
 import React, { useState } from 'react';
-import { Building2, Plus, X, Loader2 } from 'lucide-react';
+import { Building2, Plus, X, Loader2, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
-import { useDepartments, useCreateDepartment } from '../hooks/use-departments';
+import {
+  useDepartments,
+  useCreateDepartment,
+  useUpdateDepartment,
+  useDeleteDepartment,
+} from '../hooks/use-departments';
 import { departmentFormSchema, type DepartmentFormValues } from '../validation/hr-schemas';
 import { useAuth } from '@/features/auth/hooks/use-auth';
+import type { Department } from '../types';
 
 export const DepartmentTab: React.FC = () => {
   const { data: departments, isLoading } = useDepartments();
   const createMutation = useCreateDepartment();
+  const updateMutation = useUpdateDepartment();
+  const deleteMutation = useDeleteDepartment();
+
   const { hasRole, hasPermission } = useAuth();
-  const canManage = hasRole('admin') || hasPermission('hr.department.manage') || hasPermission('master_data.manage');
+  const canManage =
+    hasRole('admin') ||
+    hasPermission('hr.department.manage') ||
+    hasPermission('master_data.manage');
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingDept, setEditingDept] = useState<Department | null>(null);
+  const [deletingDept, setDeletingDept] = useState<Department | null>(null);
 
   const {
     register,
@@ -30,15 +44,54 @@ export const DepartmentTab: React.FC = () => {
     },
   });
 
+  const handleOpenCreate = () => {
+    setEditingDept(null);
+    reset({
+      code: '',
+      name: '',
+      parent_id: null,
+      status: 'active',
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleOpenEdit = (dept: Department) => {
+    setEditingDept(dept);
+    reset({
+      code: dept.code,
+      name: dept.name,
+      parent_id: dept.parent_id || null,
+      status: dept.status,
+    });
+    setIsDialogOpen(true);
+  };
+
   const onSubmit = async (values: DepartmentFormValues) => {
     try {
-      await createMutation.mutateAsync(values);
+      if (editingDept) {
+        await updateMutation.mutateAsync({ id: editingDept.id, values });
+      } else {
+        await createMutation.mutateAsync(values);
+      }
       reset();
       setIsDialogOpen(false);
+      setEditingDept(null);
     } catch {
-      // Error is caught and surfaced via useCreateDepartment onError toast
+      // Error is caught and surfaced via onError toast in the hook
     }
   };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingDept) return;
+    try {
+      await deleteMutation.mutateAsync(deletingDept.id);
+      setDeletingDept(null);
+    } catch {
+      // Error is surfaced via onError toast
+    }
+  };
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
     <div className="space-y-4">
@@ -53,7 +106,8 @@ export const DepartmentTab: React.FC = () => {
         {canManage && (
           <Button
             size="sm"
-            onClick={() => setIsDialogOpen(true)}
+            onClick={handleOpenCreate}
+            id="add-department-btn"
             className="flex items-center gap-1.5"
           >
             <Plus className="h-4 w-4" />
@@ -74,46 +128,73 @@ export const DepartmentTab: React.FC = () => {
           {departments?.map((dept) => (
             <div
               key={dept.id}
-              className="flex flex-col justify-between rounded-xl border border-border bg-card p-4 shadow-sm transition-all hover:border-primary/40"
+              className="flex flex-col justify-between rounded-xl border border-border bg-card p-4 shadow-sm transition-all hover:border-primary/40 group"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Building2 className="h-5 w-5" />
+              <div>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                      <Building2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-foreground">{dept.name}</h4>
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        Mã: {dept.code}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-foreground">{dept.name}</h4>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      Mã: {dept.code}
-                    </span>
-                  </div>
-                </div>
 
-                <span
-                  className={
-                    dept.status === 'active'
-                      ? 'inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                      : 'inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                  }
-                >
-                  {dept.status === 'active' ? 'Hoạt động' : 'Tạm dừng'}
-                </span>
+                  <span
+                    className={
+                      dept.status === 'active'
+                        ? 'inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                        : 'inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                    }
+                  >
+                    {dept.status === 'active' ? 'Hoạt động' : 'Tạm dừng'}
+                  </span>
+                </div>
               </div>
 
               <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
-                <span>Trưởng đơn vị:</span>
-                <span className="font-medium text-foreground">
-                  {dept.manager
-                    ? `${dept.manager.last_name} ${dept.manager.first_name}`
-                    : 'Chưa bổ nhiệm'}
-                </span>
+                <div>
+                  <span>Trưởng đơn vị: </span>
+                  <span className="font-medium text-foreground">
+                    {dept.manager
+                      ? `${dept.manager.last_name} ${dept.manager.first_name}`
+                      : 'Chưa bổ nhiệm'}
+                  </span>
+                </div>
+
+                {canManage && (
+                  <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleOpenEdit(dept)}
+                      title="Chỉnh sửa phòng ban"
+                      className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setDeletingDept(dept)}
+                      title="Xóa phòng ban"
+                      className="h-7 w-7 rounded-md text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Dialog create department */}
+      {/* Dialog Create / Edit department */}
       {isDialogOpen && (
         <div
           role="dialog"
@@ -126,7 +207,9 @@ export const DepartmentTab: React.FC = () => {
           />
           <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in-50 zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-border">
-              <h3 className="text-sm font-bold text-foreground">Thêm Phòng Ban Mới</h3>
+              <h3 className="text-sm font-bold text-foreground">
+                {editingDept ? 'Chỉnh Sửa Phòng Ban' : 'Thêm Phòng Ban Mới'}
+              </h3>
               <Button
                 variant="ghost"
                 size="icon"
@@ -192,14 +275,65 @@ export const DepartmentTab: React.FC = () => {
                 <Button
                   type="submit"
                   size="sm"
-                  disabled={createMutation.isPending}
+                  disabled={isSaving}
                   className="flex items-center gap-1.5"
                 >
-                  {createMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  <span>Tạo phòng ban</span>
+                  {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>{editingDept ? 'Lưu thay đổi' : 'Tạo phòng ban'}</span>
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingDept && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+        >
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setDeletingDept(null)}
+          />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-destructive/20 bg-card p-6 shadow-2xl animate-in fade-in-50 zoom-in-95">
+            <div className="flex items-center gap-3 text-destructive">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-destructive/10">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Xác Nhận Xóa Phòng Ban</h3>
+                <p className="text-xs text-muted-foreground font-mono">{deletingDept.code}</p>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
+              Bạn có chắc chắn muốn xóa phòng ban <strong className="text-foreground">{deletingDept.name}</strong>?
+              Hành động này không thể hoàn tác nếu phòng ban không có dữ liệu liên kết.
+            </p>
+
+            <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeletingDept(null)}
+                disabled={deleteMutation.isPending}
+              >
+                Hủy
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteConfirm}
+                disabled={deleteMutation.isPending}
+                className="flex items-center gap-1.5"
+              >
+                {deleteMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                <span>Xóa phòng ban</span>
+              </Button>
+            </div>
           </div>
         </div>
       )}

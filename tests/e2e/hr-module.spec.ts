@@ -171,6 +171,23 @@ async function setupMockHrSession(page: Page) {
           updated_at: new Date().toISOString(),
         }),
       });
+    } else if (route.request().method() === 'PATCH' || route.request().method() === 'PUT') {
+      const payload = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...mockDepartments[0],
+          ...payload,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    } else if (route.request().method() === 'DELETE') {
+      await route.fulfill({
+        status: 204,
+        contentType: 'application/json',
+        body: '',
+      });
     } else {
       await route.continue();
     }
@@ -195,6 +212,23 @@ async function setupMockHrSession(page: Page) {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }),
+      });
+    } else if (route.request().method() === 'PATCH' || route.request().method() === 'PUT') {
+      const payload = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...mockPositions[0],
+          ...payload,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    } else if (route.request().method() === 'DELETE') {
+      await route.fulfill({
+        status: 204,
+        contentType: 'application/json',
+        body: '',
       });
     } else {
       await route.continue();
@@ -356,5 +390,53 @@ test.describe('HR Module — Full Feature Journey E2E Tests', () => {
 
     // Verify dialog closes
     await expect(dialog).toBeHidden();
+  });
+
+  test('allows admin to edit and delete department and position', async ({ page }) => {
+    await page.goto('/hr');
+
+    // Switch to Departments tab
+    await page.locator('#tab-departments').click();
+    await expect(page.locator('h3:has-text("Danh Sách Cơ Cấu Phòng Ban")')).toBeVisible();
+
+    // Verify edit and delete buttons are visible
+    const editDeptBtn = page.locator('button[title="Chỉnh sửa phòng ban"]').first();
+    await expect(editDeptBtn).toBeVisible();
+    await editDeptBtn.click();
+
+    // Edit dialog opens
+    const deptDialog = page.locator('div[role="dialog"]');
+    await expect(deptDialog).toBeVisible();
+    await expect(deptDialog.locator('h3')).toHaveText('Chỉnh Sửa Phòng Ban');
+
+    // Update department name
+    await page.fill('#dept-name', 'Phòng Sản Xuất & Chế Biến');
+    await page.locator('button[type="submit"]:has-text("Lưu thay đổi")').click();
+    await expect(deptDialog).toBeHidden();
+
+    // Test Delete department confirmation modal
+    const deleteDeptBtn = page.locator('button[title="Xóa phòng ban"]').first();
+    await deleteDeptBtn.click();
+    const deleteDeptModal = page.locator('div[role="dialog"]');
+    await expect(deleteDeptModal).toBeVisible();
+    await expect(deleteDeptModal.locator('h3')).toHaveText('Xác Nhận Xóa Phòng Ban');
+    await deleteDeptModal.locator('button:has-text("Hủy")').click();
+    await expect(deleteDeptModal).toBeHidden();
+
+    // Switch to Positions tab
+    await page.locator('#tab-positions').click();
+    await expect(page.locator('h3:has-text("Danh Mục Chức Danh & Vị Trí")')).toBeVisible();
+
+    // Verify edit and delete buttons in table
+    const editPosBtn = page.locator('button[title="Chỉnh sửa chức danh"]').first();
+    await expect(editPosBtn).toBeVisible();
+    await editPosBtn.click();
+
+    // Edit dialog opens
+    const posDialog = page.locator('div[role="dialog"]');
+    await expect(posDialog).toBeVisible();
+    await expect(posDialog.locator('h3')).toHaveText('Chỉnh Sửa Chức Danh');
+    await page.locator('button[type="button"]:has-text("Hủy")').click();
+    await expect(posDialog).toBeHidden();
   });
 });
