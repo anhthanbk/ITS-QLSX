@@ -31,9 +31,13 @@ export const DepartmentTab: React.FC = () => {
   });
 
   const onSubmit = async (values: DepartmentFormValues) => {
-    await createMutation.mutateAsync(values);
-    reset();
-    setIsDialogOpen(false);
+    try {
+      await createMutation.mutateAsync(values);
+      reset();
+      setIsDialogOpen(false);
+    } catch {
+      // Error is caught and surfaced via useCreateDepartment onError toast
+    }
   };
 
   return (

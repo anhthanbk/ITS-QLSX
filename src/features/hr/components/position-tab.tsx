@@ -34,9 +34,13 @@ export const PositionTab: React.FC = () => {
   });
 
   const onSubmit = async (values: PositionFormValues) => {
-    await createMutation.mutateAsync(values);
-    reset();
-    setIsDialogOpen(false);
+    try {
+      await createMutation.mutateAsync(values);
+      reset();
+      setIsDialogOpen(false);
+    } catch {
+      // Error is caught and surfaced via useCreatePosition onError toast
+    }
   };
 
   return (
