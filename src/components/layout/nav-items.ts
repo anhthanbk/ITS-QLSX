@@ -10,6 +10,7 @@ import {
   DollarSign,
   ShoppingCart,
   Settings,
+  Users,
 } from 'lucide-react';
 
 export interface NavSubItem {
@@ -166,6 +167,13 @@ export const navigationItems: NavItem[] = [
     path: '/sales',
     icon: ShoppingCart,
     requiredPermission: 'sales.order.view',
+  },
+  {
+    id: 'hr',
+    title: 'Nhân sự & Tổ chức',
+    path: '/hr',
+    icon: Users,
+    requiredPermission: ['hr.employee.read', 'master_data.read'],
   },
   {
     id: 'admin',

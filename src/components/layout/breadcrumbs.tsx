@@ -25,6 +25,7 @@ const ROUTE_LABELS: Record<string, string> = {
   hsse: 'An toàn & Môi trường',
   finance: 'Giá thành sản xuất',
   sales: 'Bán hàng & Đơn hàng',
+  hr: 'Nhân sự & Tổ chức',
   admin: 'Quản trị hệ thống',
   audit: 'Nhật ký thao tác',
 };

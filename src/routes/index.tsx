@@ -5,6 +5,7 @@ import { LoginPage } from '@/features/auth/pages/login-page';
 import { ProfilePage } from '@/features/auth/pages/profile-page';
 import { ForbiddenPage } from '@/features/auth/pages/forbidden-page';
 import { DashboardOverview } from '@/features/auth/components/dashboard-overview';
+import { HRPage } from '@/features/hr';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageContainer } from '@/components/layout/page-container';
 
@@ -20,6 +21,7 @@ export const AppRoutes: React.FC = () => {
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardOverview />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/hr" element={<HRPage />} />
 
           {/* Role-Gated Admin Route */}
           <Route element={<ProtectedRoute requiredRole="admin" />}>
