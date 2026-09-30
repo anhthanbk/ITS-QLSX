@@ -30,6 +30,11 @@ const mockEmployees: Employee[] = [
     updated_at: '2026-01-15T00:00:00Z',
     departments: { id: 'dept-1', name: 'Phòng Sản Xuất', code: 'SX' },
     positions: { id: 'pos-1', title: 'Quản Đốc Phân Xưởng', code: 'QD_SX', level: 4 },
+    account: {
+      id: 'user-1',
+      status: 'active',
+      roles: [{ id: 'role-1', code: 'operator', name: 'Vận hành viên' }],
+    },
   },
   {
     id: 'emp-2',
@@ -47,6 +52,7 @@ const mockEmployees: Employee[] = [
     updated_at: '2026-02-01T00:00:00Z',
     departments: { id: 'dept-2', name: 'Phòng KCS', code: 'KCS' },
     positions: { id: 'pos-2', title: 'Nhân Viên KCS', code: 'NV_KCS', level: 2 },
+    account: null,
   },
 ];
 
@@ -122,6 +128,38 @@ describe('EmployeeTable UI Component', () => {
     await user.click(viewButtons[0]!);
 
     expect(onViewDetail).toHaveBeenCalledWith(mockEmployees[0]);
+  });
+
+  it('renders account status badge and triggers onManageAccount callback', async () => {
+    const user = userEvent.setup();
+    const onManageAccount = vi.fn();
+
+    render(
+      <EmployeeTable
+        data={mockPaginatedData}
+        isLoading={false}
+        isError={false}
+        onRetry={() => {}}
+        onPageChange={() => {}}
+        onViewDetail={() => {}}
+        onEdit={() => {}}
+        onDelete={() => {}}
+        onManageAccount={onManageAccount}
+      />,
+    );
+
+    // Verify account badges
+    expect(screen.getByText('Vận hành viên')).toBeInTheDocument();
+    expect(screen.getByText('Chưa cấp')).toBeInTheDocument();
+
+    // Verify manage account buttons
+    const manageAccountBtn = screen.getByTitle('Quản lý tài khoản');
+    await user.click(manageAccountBtn);
+    expect(onManageAccount).toHaveBeenCalledWith(mockEmployees[0]);
+
+    const provisionAccountBtn = screen.getByTitle('Cấp tài khoản đăng nhập');
+    await user.click(provisionAccountBtn);
+    expect(onManageAccount).toHaveBeenCalledWith(mockEmployees[1]);
   });
 });
 

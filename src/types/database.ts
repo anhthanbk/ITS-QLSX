@@ -2381,6 +2381,42 @@ export type Database = {
       }
       has_permission: { Args: { p_permission: string }; Returns: boolean }
       has_role: { Args: { p_role: string }; Returns: boolean }
+      admin_provision_employee_account: {
+        Args: {
+          p_employee_id: string
+          p_email: string
+          p_password?: string
+          p_role_code: string
+        }
+        Returns: Json
+      }
+      admin_unlink_employee_account: {
+        Args: {
+          p_employee_id: string
+        }
+        Returns: Json
+      }
+      admin_toggle_user_status: {
+        Args: {
+          p_user_id: string
+          p_status: string
+        }
+        Returns: Json
+      }
+      admin_change_user_role: {
+        Args: {
+          p_user_id: string
+          p_new_role_code: string
+        }
+        Returns: Json
+      }
+      admin_reset_user_password: {
+        Args: {
+          p_user_id: string
+          p_new_password: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never

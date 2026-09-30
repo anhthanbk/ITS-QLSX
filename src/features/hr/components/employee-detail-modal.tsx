@@ -9,6 +9,7 @@ import {
   UserCheck,
   Edit,
   Hash,
+  KeyRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Employee } from '../types';
@@ -19,6 +20,7 @@ export interface EmployeeDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   onEdit: (employee: Employee) => void;
+  onManageAccount?: (employee: Employee) => void;
 }
 
 export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
@@ -26,6 +28,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   isOpen,
   onClose,
   onEdit,
+  onManageAccount,
 }) => {
   const { hasRole, hasPermission } = useAuth();
   const canManage = hasRole('admin') || hasPermission('hr.employee.manage') || hasPermission('master_data.manage');
@@ -164,6 +167,39 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
             </div>
           </div>
 
+          {/* Account info card */}
+          <div className="rounded-xl border border-border bg-muted/20 p-3.5 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                {employee.account ? (
+                  <UserCheck className="h-4 w-4" />
+                ) : (
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">
+                  {employee.account
+                    ? `Tài khoản: ${employee.account.roles?.[0]?.name || 'Có tài khoản'}`
+                    : 'Chưa cấp tài khoản đăng nhập'}
+                </p>
+                <p className="text-[11px] text-muted-foreground font-mono">{employee.email || 'Chưa có email'}</p>
+              </div>
+            </div>
+
+            {employee.account && (
+              <span
+                className={
+                  employee.account.status === 'active'
+                    ? 'inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                    : 'inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                }
+              >
+                {employee.account.status === 'active' ? 'Hoạt động' : 'Tạm khóa'}
+              </span>
+            )}
+          </div>
+
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
             <Hash className="h-3.5 w-3.5" />
             <span>ID: {employee.id}</span>
@@ -174,6 +210,20 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
             <Button variant="outline" size="sm" onClick={onClose}>
               Đóng
             </Button>
+            {canManage && onManageAccount && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onClose();
+                  onManageAccount(employee);
+                }}
+                className="flex items-center gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                <span>{employee.account ? 'Tài khoản' : 'Cấp tài khoản'}</span>
+              </Button>
+            )}
             {canManage && (
               <Button
                 size="sm"

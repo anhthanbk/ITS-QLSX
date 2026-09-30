@@ -64,7 +64,31 @@ export interface Employee {
     last_name: string;
     employee_code: string;
   } | null;
+  account?: {
+    id: string;
+    status: 'active' | 'suspended';
+    roles: Array<{
+      id?: string;
+      code: string;
+      name: string;
+    }>;
+  } | null;
 }
+
+export interface SystemRole {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+}
+
+export interface ProvisionAccountParams {
+  employeeId: string;
+  email: string;
+  password?: string;
+  roleCode: string;
+}
+
 
 export interface EmployeeFilterParams {
   search?: string;

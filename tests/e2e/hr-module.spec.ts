@@ -86,6 +86,16 @@ const mockEmployees = [
     departments: { id: mockDeptProdId, name: 'Phòng Sản Xuất', code: 'SX' },
     positions: { id: mockPosQdId, title: 'Quản Đốc Phân Xưởng', code: 'QD_SX', level: 4 },
     direct_manager: null,
+    profiles: {
+      id: 'mock-profile-user-1',
+      status: 'active',
+      user_roles: [
+        {
+          role_id: 'role-operator',
+          roles: { id: 'role-operator', code: 'operator', name: 'Nhân viên vận hành' },
+        },
+      ],
+    },
   },
   {
     id: 'e2222222-2222-2222-2222-222222222222',
@@ -104,6 +114,7 @@ const mockEmployees = [
     departments: { id: mockDeptQcId, name: 'Phòng Quản Lý Chất Lượng', code: 'KCS' },
     positions: { id: mockPosKcsId, title: 'Nhân Viên Kiểm Phẩm', code: 'NV_KCS', level: 2 },
     direct_manager: null,
+    profiles: null,
   },
 ];
 
@@ -281,6 +292,63 @@ async function setupMockHrSession(page: Page) {
     }
   });
 
+  // Mock System Roles for Account Provisioning
+  await page.route('**/rest/v1/roles*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { id: 'role-admin', code: 'admin', name: 'Quản trị hệ thống' },
+        { id: 'role-plant-manager', code: 'plant_manager', name: 'Giám đốc nhà máy' },
+        { id: 'role-shift-leader', code: 'shift_leader', name: 'Trưởng ca sản xuất' },
+        { id: 'role-operator', code: 'operator', name: 'Nhân viên vận hành' },
+        { id: 'role-qc', code: 'qc_inspector', name: 'KCS / Kiểm soát chất lượng' },
+        { id: 'role-wh', code: 'warehouse_keeper', name: 'Thủ kho' },
+      ]),
+    });
+  });
+
+  // Mock Account RPCs
+  await page.route('**/rest/v1/rpc/admin_provision_employee_account*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, user_id: 'new-mock-user-id' }),
+    });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_unlink_employee_account*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true }),
+    });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_toggle_user_status*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true }),
+    });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_change_user_role*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true }),
+    });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_reset_user_password*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true }),
+    });
+  });
+
   // Inject session into localStorage
   await page.addInitScript((user) => {
     const session = {
@@ -438,5 +506,67 @@ test.describe('HR Module — Full Feature Journey E2E Tests', () => {
     await expect(posDialog.locator('h3')).toHaveText('Chỉnh Sửa Chức Danh');
     await page.locator('button[type="button"]:has-text("Hủy")').click();
     await expect(posDialog).toBeHidden();
+  });
+
+  test('displays account status pill in employee table and opens account management dialog', async ({ page }) => {
+    await page.goto('/hr');
+
+    // Account column visible
+    await expect(page.locator('th:has-text("Tài khoản")')).toBeVisible();
+
+    // EMP-001 has "Nhân viên vận hành" pill
+    await expect(page.locator('#employee-data-table').locator('text=Nhân viên vận hành')).toBeVisible();
+
+    // EMP-002 has "Chưa cấp" pill
+    await expect(page.locator('#employee-data-table').locator('text=Chưa cấp')).toBeVisible();
+
+    // Click "Quản lý tài khoản" for EMP-001
+    const manageBtn = page.locator('button[title="Quản lý tài khoản"]').first();
+    await manageBtn.click();
+
+    // Account management modal opens
+    const modal = page.locator('div[role="dialog"]');
+    await expect(modal).toBeVisible();
+    await expect(modal.locator('#employee-account-modal-title')).toHaveText('Quản Lý Tài Khoản Đăng Nhập');
+    await expect(modal.locator('text=an.nguyen@its-qlsx.vn')).toBeVisible();
+
+    // Close modal
+    const closeBtn = modal.locator('button[aria-label="Đóng"]');
+    await closeBtn.click();
+    await expect(modal).toBeHidden();
+  });
+
+  test('allows creating new employee with login account provisioned', async ({ page }) => {
+    await page.goto('/hr');
+
+    const addBtn = page.locator('#add-employee-button');
+    await addBtn.click();
+
+    const dialog = page.locator('div[role="dialog"]');
+    await expect(dialog).toBeVisible();
+
+    // Fill form
+    await page.fill('#employee_code', 'EMP-004');
+    await page.fill('#last_name', 'Đỗ');
+    await page.fill('#first_name', 'Tuấn');
+    await page.fill('#email', 'tuan.do@its-qlsx.vn');
+    await page.fill('#phone', '0944444444');
+    await page.selectOption('#department_id', mockDeptProdId);
+    await page.selectOption('#position_id', mockPosQdId);
+
+    // Toggle account creation
+    const accountToggle = page.locator('#create_account');
+    await accountToggle.check();
+
+    // Fill password and select role
+    await page.fill('#account_password', 'Tuando123456!');
+    await page.selectOption('#account_role', 'operator');
+
+    // Submit
+    const submitBtn = page.locator('#submit-employee-form-btn');
+    await submitBtn.click();
+
+    // Dialog closes
+    await expect(dialog).toBeHidden();
   });
 });

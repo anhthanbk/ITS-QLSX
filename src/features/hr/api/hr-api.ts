@@ -5,6 +5,8 @@ import type {
   Position,
   EmployeeFilterParams,
   PaginatedResult,
+  SystemRole,
+  ProvisionAccountParams,
 } from '../types';
 import type {
   EmployeeFormValues,
@@ -39,7 +41,8 @@ export async function fetchEmployees(
       updated_at,
       departments:department_id(id, name, code),
       positions:position_id(id, title, code, level),
-      direct_manager:direct_manager_id(id, first_name, last_name, employee_code)
+      direct_manager:direct_manager_id(id, first_name, last_name, employee_code),
+      profiles(id, status, user_roles(role_id, roles(id, code, name)))
     `,
       { count: 'exact' },
     );
@@ -83,9 +86,46 @@ export async function fetchEmployees(
   const totalCount = count ?? 0;
   const totalPages = Math.ceil(totalCount / pageSize);
 
-  // Cast through unknown to resolve PostgREST joined relation types
+  // Map PostgREST relation to Employee model with account
+  interface RawUserRole {
+    roles?: {
+      id: string;
+      code: string;
+      name: string;
+    } | null;
+  }
+
+  interface RawProfile {
+    id: string;
+    status: 'active' | 'suspended';
+    user_roles?: RawUserRole[] | null;
+  }
+
+  interface RawEmployeeRecord extends Omit<Employee, 'account'> {
+    profiles?: RawProfile | RawProfile[] | null;
+  }
+
+  const mappedData: Employee[] = ((data ?? []) as unknown as RawEmployeeRecord[]).map((emp) => {
+    const rawProfile = Array.isArray(emp.profiles) ? emp.profiles[0] : emp.profiles;
+    let account = null;
+    if (rawProfile) {
+      const roles = (rawProfile.user_roles ?? [])
+        .map((ur) => ur.roles)
+        .filter((r): r is NonNullable<typeof r> => Boolean(r));
+      account = {
+        id: rawProfile.id,
+        status: rawProfile.status,
+        roles,
+      };
+    }
+    return {
+      ...emp,
+      account,
+    };
+  });
+
   return {
-    data: (data ?? []) as unknown as Employee[],
+    data: mappedData,
     totalCount,
     page,
     pageSize,
@@ -173,6 +213,26 @@ export async function createEmployee(values: EmployeeFormValues): Promise<Employ
   if (error) {
     console.error('Failed to create employee:', error);
     throw new Error(error.message);
+  }
+
+  // Option C: If create_account is selected, provision user account via secure RPC
+  if (values.create_account && values.email && values.account_password) {
+    const { error: rpcError } = await supabase.rpc(
+      'admin_provision_employee_account',
+      {
+        p_employee_id: data.id,
+        p_email: values.email.trim().toLowerCase(),
+        p_password: values.account_password,
+        p_role_code: values.account_role || 'operator',
+      },
+    );
+
+    if (rpcError) {
+      console.error('Account provision RPC failed:', rpcError);
+      throw new Error(
+        `Đã tạo hồ sơ nhân viên, nhưng cấp tài khoản thất bại: ${rpcError.message}`,
+      );
+    }
   }
 
   return data as unknown as Employee;
@@ -443,4 +503,111 @@ export async function deletePosition(id: string): Promise<void> {
     throw new Error(error.message);
   }
 }
+
+/**
+ * Provisions or links an account for an existing employee.
+ */
+export async function provisionEmployeeAccount(
+  params: ProvisionAccountParams,
+): Promise<{ user_id: string; email: string; role_code: string }> {
+  const { data, error } = await supabase.rpc('admin_provision_employee_account', {
+    p_employee_id: params.employeeId,
+    p_email: params.email.trim().toLowerCase(),
+    p_password: params.password || 'P@ssword123',
+    p_role_code: params.roleCode,
+  });
+
+  if (error) {
+    console.error('Failed to provision employee account:', error);
+    throw new Error(error.message);
+  }
+
+  return data as unknown as { user_id: string; email: string; role_code: string };
+}
+
+/**
+ * Unlinks an account from an employee.
+ */
+export async function unlinkEmployeeAccount(employeeId: string): Promise<void> {
+  const { error } = await supabase.rpc('admin_unlink_employee_account', {
+    p_employee_id: employeeId,
+  });
+
+  if (error) {
+    console.error('Failed to unlink employee account:', error);
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Toggles user account status (active vs suspended).
+ */
+export async function toggleUserStatus(
+  userId: string,
+  status: 'active' | 'suspended',
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_toggle_user_status', {
+    p_user_id: userId,
+    p_status: status,
+  });
+
+  if (error) {
+    console.error('Failed to toggle user status:', error);
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Changes a user's system role.
+ */
+export async function changeUserRole(
+  userId: string,
+  roleCode: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_change_user_role', {
+    p_user_id: userId,
+    p_new_role_code: roleCode,
+  });
+
+  if (error) {
+    console.error('Failed to change user role:', error);
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Resets a user's password.
+ */
+export async function resetUserPassword(
+  userId: string,
+  newPassword: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_reset_user_password', {
+    p_user_id: userId,
+    p_new_password: newPassword,
+  });
+
+  if (error) {
+    console.error('Failed to reset user password:', error);
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Fetches all system roles for assignment.
+ */
+export async function fetchRoles(): Promise<SystemRole[]> {
+  const { data, error } = await supabase
+    .from('roles')
+    .select('id, code, name, description')
+    .order('name');
+
+  if (error) {
+    console.error('Failed to fetch roles:', error);
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as unknown as SystemRole[];
+}
+
 

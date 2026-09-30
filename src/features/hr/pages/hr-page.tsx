@@ -5,6 +5,7 @@ import { EmployeeFilterBar } from '../components/employee-filter-bar';
 import { EmployeeTable } from '../components/employee-table';
 import { EmployeeFormDialog } from '../components/employee-form-dialog';
 import { EmployeeDetailModal } from '../components/employee-detail-modal';
+import { EmployeeAccountModal } from '../components/employee-account-modal';
 import { DepartmentTab } from '../components/department-tab';
 import { PositionTab } from '../components/position-tab';
 import {
@@ -46,6 +47,7 @@ export const HRPage: React.FC = () => {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
+  const [accountModalEmployee, setAccountModalEmployee] = useState<Employee | null>(null);
 
   // Handlers
   const handleSearchChange = (search: string) => {
@@ -227,6 +229,7 @@ export const HRPage: React.FC = () => {
                 setIsFormOpen(true);
               }}
               onDelete={(emp) => setDeletingEmployee(emp)}
+              onManageAccount={(emp) => setAccountModalEmployee(emp)}
             />
           </div>
         )}
@@ -257,6 +260,14 @@ export const HRPage: React.FC = () => {
             setEditingEmployee(emp);
             setIsFormOpen(true);
           }}
+          onManageAccount={(emp) => setAccountModalEmployee(emp)}
+        />
+
+        {/* Employee Account Management Modal */}
+        <EmployeeAccountModal
+          isOpen={!!accountModalEmployee}
+          employee={accountModalEmployee}
+          onClose={() => setAccountModalEmployee(null)}
         />
 
         {/* Delete Confirmation Dialog */}

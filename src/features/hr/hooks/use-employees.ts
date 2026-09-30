@@ -84,3 +84,99 @@ export function useDeleteEmployee() {
     },
   });
 }
+
+export function useProvisionAccount() {
+  const queryClient = useQueryClient();
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: (params: import('../types').ProvisionAccountParams) =>
+      import('../api/hr-api').then((m) => m.provisionEmployeeAccount(params)),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: EMPLOYEES_QUERY_KEY });
+      success(`Đã cấp tài khoản (${data.email}) cho nhân viên thành công.`);
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Không thể cấp tài khoản cho nhân viên.');
+    },
+  });
+}
+
+export function useUnlinkAccount() {
+  const queryClient = useQueryClient();
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: (employeeId: string) =>
+      import('../api/hr-api').then((m) => m.unlinkEmployeeAccount(employeeId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: EMPLOYEES_QUERY_KEY });
+      success('Đã hủy liên kết tài khoản khỏi nhân viên.');
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Không thể hủy liên kết tài khoản.');
+    },
+  });
+}
+
+export function useToggleUserStatus() {
+  const queryClient = useQueryClient();
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: ({ userId, status }: { userId: string; status: 'active' | 'suspended' }) =>
+      import('../api/hr-api').then((m) => m.toggleUserStatus(userId, status)),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: EMPLOYEES_QUERY_KEY });
+      success(
+        variables.status === 'active'
+          ? 'Đã mở khóa tài khoản người dùng.'
+          : 'Đã tạm khóa tài khoản người dùng.',
+      );
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Không thể thay đổi trạng thái tài khoản.');
+    },
+  });
+}
+
+export function useChangeUserRole() {
+  const queryClient = useQueryClient();
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: ({ userId, roleCode }: { userId: string; roleCode: string }) =>
+      import('../api/hr-api').then((m) => m.changeUserRole(userId, roleCode)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: EMPLOYEES_QUERY_KEY });
+      success('Đã cập nhật vai trò hệ thống thành công.');
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Không thể thay đổi vai trò.');
+    },
+  });
+}
+
+export function useResetUserPassword() {
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: ({ userId, newPassword }: { userId: string; newPassword: string }) =>
+      import('../api/hr-api').then((m) => m.resetUserPassword(userId, newPassword)),
+    onSuccess: () => {
+      success('Đã đặt lại mật khẩu mới cho tài khoản thành công.');
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Không thể đặt lại mật khẩu.');
+    },
+  });
+}
+
+export function useRoles() {
+  return useQuery({
+    queryKey: ['system-roles'],
+    queryFn: () => import('../api/hr-api').then((m) => m.fetchRoles()),
+    staleTime: 60 * 60 * 1000,
+  });
+}
+

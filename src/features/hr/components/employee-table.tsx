@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Eye,
   Edit,
@@ -7,6 +6,8 @@ import {
   ChevronRight,
   AlertCircle,
   Users,
+  KeyRound,
+  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Employee, PaginatedResult } from '../types';
@@ -21,6 +22,7 @@ export interface EmployeeTableProps {
   onViewDetail: (employee: Employee) => void;
   onEdit: (employee: Employee) => void;
   onDelete: (employee: Employee) => void;
+  onManageAccount?: (employee: Employee) => void;
 }
 
 export const EmployeeTable: React.FC<EmployeeTableProps> = ({
@@ -32,6 +34,7 @@ export const EmployeeTable: React.FC<EmployeeTableProps> = ({
   onViewDetail,
   onEdit,
   onDelete,
+  onManageAccount,
 }) => {
   const { hasRole, hasPermission } = useAuth();
   const canManage = hasRole('admin') || hasPermission('hr.employee.manage') || hasPermission('master_data.manage');
@@ -93,6 +96,7 @@ export const EmployeeTable: React.FC<EmployeeTableProps> = ({
               <th className="px-3 py-3.5">Họ và Tên</th>
               <th className="px-3 py-3.5">Phòng ban</th>
               <th className="px-3 py-3.5">Chức danh</th>
+              <th className="px-3 py-3.5">Tài khoản</th>
               <th className="px-3 py-3.5">Liên hệ</th>
               <th className="px-3 py-3.5">Ngày vào</th>
               <th className="px-3 py-3.5">Trạng thái</th>
@@ -155,6 +159,25 @@ export const EmployeeTable: React.FC<EmployeeTableProps> = ({
                     {emp.positions?.title || 'Chưa phân bổ'}
                   </td>
 
+                  {/* System Account */}
+                  <td className="px-3 py-3.5">
+                    {emp.account ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                          <ShieldCheck className="h-3 w-3 shrink-0" />
+                          <span>{emp.account.roles?.[0]?.name || 'Có tài khoản'}</span>
+                        </span>
+                        {emp.account.status === 'suspended' && (
+                          <span className="text-[10px] text-rose-600 font-semibold">(Đã khóa)</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="inline-flex rounded bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        Chưa cấp
+                      </span>
+                    )}
+                  </td>
+
                   {/* Contact */}
                   <td className="px-3 py-3.5 text-muted-foreground">
                     <div>{emp.phone || '—'}</div>
@@ -184,6 +207,19 @@ export const EmployeeTable: React.FC<EmployeeTableProps> = ({
 
                       {canManage && (
                         <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onManageAccount?.(emp)}
+                            title={emp.account ? 'Quản lý tài khoản' : 'Cấp tài khoản đăng nhập'}
+                            className={`h-7 w-7 rounded-md ${
+                              emp.account
+                                ? 'text-primary hover:text-primary hover:bg-primary/10'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"

@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { X, Loader2 } from 'lucide-react';
+import { X, Loader2, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { employeeFormSchema, type EmployeeFormValues } from '../validation/hr-schemas';
 import type { Employee } from '../types';
@@ -44,10 +44,14 @@ export const EmployeeFormDialog: React.FC<EmployeeFormDialogProps> = ({
       direct_manager_id: null,
       hire_date: new Date().toISOString().split('T')[0],
       status: 'active',
+      create_account: false,
+      account_role: 'operator',
+      account_password: '',
     },
   });
 
   const selectedDepartmentId = watch('department_id');
+  const watchCreateAccount = watch('create_account');
   const { data: positions } = usePositions(selectedDepartmentId);
 
   // Sync form data when dialog opens or employeeToEdit changes
@@ -289,6 +293,76 @@ export const EmployeeFormDialog: React.FC<EmployeeFormDialogProps> = ({
               )}
             </div>
           </div>
+
+          {/* Option C: Optional System Account Provisioning (New employee only) */}
+          {!employeeToEdit && (
+            <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-primary" />
+                  <span className="text-xs font-bold text-foreground">
+                    Cấp tài khoản đăng nhập hệ thống
+                  </span>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-foreground">
+                  <input
+                    type="checkbox"
+                    id="create_account"
+                    data-testid="create_account_checkbox"
+                    {...register('create_account')}
+                    className="rounded border-input text-primary focus:ring-primary h-4 w-4"
+                  />
+                  <span>Kích hoạt tài khoản</span>
+                </label>
+              </div>
+
+              {watchCreateAccount && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border animate-in fade-in-50">
+                  <div className="space-y-1">
+                    <label htmlFor="account_role" className="text-xs font-semibold text-foreground">
+                      Vai trò hệ thống <span className="text-destructive">*</span>
+                    </label>
+                    <select
+                      id="account_role"
+                      {...register('account_role')}
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="operator">Công nhân vận hành (operator)</option>
+                      <option value="shift_leader">Trưởng ca sản xuất (shift_leader)</option>
+                      <option value="plant_manager">Quản đốc nhà máy (plant_manager)</option>
+                      <option value="qc_inspector">Kiểm phẩm KCS (qc_inspector)</option>
+                      <option value="warehouse_keeper">Thủ kho vật tư (warehouse_keeper)</option>
+                      <option value="admin">Quản trị hệ thống (admin)</option>
+                    </select>
+                    {errors.account_role && (
+                      <p className="text-[11px] text-destructive">{errors.account_role.message}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="account_password"
+                      className="text-xs font-semibold text-foreground"
+                    >
+                      Mật khẩu khởi tạo <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      id="account_password"
+                      type="password"
+                      placeholder="Tối thiểu 6 ký tự"
+                      {...register('account_password')}
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    {errors.account_password && (
+                      <p className="text-[11px] text-destructive">
+                        {errors.account_password.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Footer Actions */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
