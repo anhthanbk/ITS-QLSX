@@ -20,6 +20,19 @@ const mockDeptQcId = 'd2222222-2222-2222-2222-222222222222';
 const mockPosQdId = 'c1111111-1111-1111-1111-111111111111';
 const mockPosKcsId = 'c2222222-2222-2222-2222-222222222222';
 
+const mockProfile = {
+  id: mockUserId,
+  full_name: 'Nguyễn Văn Admin',
+  phone: '0901234567',
+  date_of_birth: '1990-01-01',
+  id_card_number: '001090001234',
+  employee_id: 'EMP-001',
+  status: 'active',
+  created_at: '2026-01-01T00:00:00Z',
+  departments: { id: mockDeptProdId, name: 'Phòng Sản Xuất', code: 'SX' },
+  positions: { id: mockPosQdId, title: 'Quản Đốc Phân Xưởng', code: 'QD_SX' },
+};
+
 const mockDepartments = [
   {
     id: mockDeptProdId,
@@ -89,6 +102,10 @@ const mockEmployees = [
     profiles: {
       id: 'mock-profile-user-1',
       status: 'active',
+      full_name: 'Nguyễn Văn An',
+      avatar_url: null,
+      date_of_birth: '1990-01-01',
+      id_card_number: '001090001234',
       user_roles: [
         {
           role_id: 'role-operator',
@@ -129,16 +146,25 @@ async function setupMockHrSession(page: Page) {
   });
 
   await page.route('**/rest/v1/profiles*', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        id: mockUserId,
-        full_name: 'Nguyễn Văn Admin',
-        employee_id: 'EMP-001',
-        status: 'active',
-      }),
-    });
+    const method = route.request().method();
+    if (method === 'PATCH' || method === 'PUT') {
+      const payload = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...mockProfile,
+          ...payload,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    } else {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(mockProfile),
+      });
+    }
   });
 
   await page.route('**/rest/v1/user_roles*', async (route) => {
@@ -308,16 +334,63 @@ async function setupMockHrSession(page: Page) {
     });
   });
 
-  // Mock Account RPCs
-  await page.route('**/rest/v1/rpc/admin_provision_employee_account*', async (route) => {
+  // Mock Pending Registrations RPCs
+  await page.route('**/rest/v1/rpc/get_pending_registrations*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ success: true, user_id: 'new-mock-user-id' }),
+      body: JSON.stringify([
+        {
+          id: 'cand-profile-1',
+          full_name: 'Lê Văn Ứng Viên',
+          avatar_url: null,
+          email: 'ungvien@its-qlsx.vn',
+          phone: '0988776655',
+          date_of_birth: '1998-08-18',
+          id_card_number: '001298007788',
+          department_id: mockDeptProdId,
+          position_id: mockPosQdId,
+          temp_employee_code: 'SX-QD-001',
+          status: 'pending',
+          rejection_reason: null,
+          created_at: '2026-09-30T00:00:00Z',
+          department_name: 'Phòng Sản Xuất',
+          department_code: 'SX',
+          position_title: 'Quản Đốc Phân Xưởng',
+          position_code: 'QD_SX',
+        },
+        {
+          id: 'cand-profile-2',
+          full_name: 'Trần Thị Tuyết',
+          avatar_url: null,
+          email: 'tuchoi@its-qlsx.vn',
+          phone: '0911223344',
+          date_of_birth: '1995-05-20',
+          id_card_number: '001095009988',
+          department_id: mockDeptQcId,
+          position_id: mockPosKcsId,
+          temp_employee_code: 'KCS-NV-002',
+          status: 'rejected',
+          rejection_reason: 'Số CCCD không đúng định dạng',
+          created_at: '2026-09-29T10:00:00Z',
+          department_name: 'Phòng Quản Lý Chất Lượng',
+          department_code: 'KCS',
+          position_title: 'Nhân Viên Kiểm Phẩm',
+          position_code: 'NV_KCS',
+        },
+      ]),
     });
   });
 
-  await page.route('**/rest/v1/rpc/admin_unlink_employee_account*', async (route) => {
+  await page.route('**/rest/v1/rpc/admin_approve_registration*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, employee_id: 'new-emp-id', employee_code: 'SX-QD-001' }),
+    });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_reject_registration*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -325,7 +398,15 @@ async function setupMockHrSession(page: Page) {
     });
   });
 
-  await page.route('**/rest/v1/rpc/admin_toggle_user_status*', async (route) => {
+  await page.route('**/rest/v1/rpc/admin_delete_employee_and_account*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, mode: 'deleted' }),
+    });
+  });
+
+  await page.route('**/rest/v1/rpc/admin_delete_registration_profile*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -333,11 +414,20 @@ async function setupMockHrSession(page: Page) {
     });
   });
 
-  await page.route('**/rest/v1/rpc/admin_change_user_role*', async (route) => {
+  await page.route('**/rest/v1/rpc/resubmit_rejected_registration*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ success: true }),
+      body: JSON.stringify({ success: true, status: 'pending', temp_employee_code: 'SX-TC-005' }),
+    });
+  });
+
+
+  await page.route('**/rest/v1/rpc/admin_update_employee_with_profile*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, employee_id: 'e1111111-1111-1111-1111-111111111111' }),
     });
   });
 
@@ -345,7 +435,15 @@ async function setupMockHrSession(page: Page) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ success: true }),
+      body: JSON.stringify(true),
+    });
+  });
+
+  await page.route('**/auth/v1/user*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(mockUser),
     });
   });
 
@@ -433,24 +531,38 @@ test.describe('HR Module — Full Feature Journey E2E Tests', () => {
     await expect(modal).toBeHidden();
   });
 
-  test('opens create employee dialog and validates required fields', async ({ page }) => {
+  test('disallows direct employee creation by admin and ensures add employee button is removed', async ({ page }) => {
     await page.goto('/hr');
 
+    // Verify add employee button does not exist
     const addBtn = page.locator('#add-employee-button');
-    await addBtn.click();
+    await expect(addBtn).toHaveCount(0);
+  });
+
+  test('allows admin to edit employee with full profile details and password reset option', async ({ page }) => {
+    await page.goto('/hr');
+
+    // Click edit on first employee
+    const editBtn = page.locator('button[title="Chỉnh sửa"]').first();
+    await editBtn.click();
 
     const dialog = page.locator('div[role="dialog"]');
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator('#employee-dialog-title')).toHaveText('Thêm Mới Nhân Viên');
+    await expect(dialog.locator('#employee-dialog-title')).toHaveText('Chỉnh Sửa Hồ Sơ Nhân Viên');
 
-    // Fill form
-    await page.fill('#employee_code', 'EMP-003');
-    await page.fill('#last_name', 'Lê');
-    await page.fill('#first_name', 'Hùng');
-    await page.fill('#email', 'hung.le@its-qlsx.vn');
-    await page.fill('#phone', '0933333333');
-    await page.selectOption('#department_id', mockDeptProdId);
-    await page.selectOption('#position_id', mockPosQdId);
+    // Verify profile fields are present
+    await expect(dialog.locator('#employee_code')).toHaveValue('EMP-001');
+    await expect(dialog.locator('#date_of_birth')).toBeVisible();
+    await expect(dialog.locator('#id_card_number')).toBeVisible();
+
+    // Verify admin password reset section
+    await expect(dialog.locator('text=Quản lý mật khẩu đăng nhập (Dành cho Admin)')).toBeVisible();
+    await expect(dialog.locator('#new_password')).toBeVisible();
+
+    // Update phone & DOB
+    await page.fill('#phone', '0909999888');
+    await page.fill('#date_of_birth', '1992-05-20');
+    await page.fill('#id_card_number', '001200000123');
 
     // Submit
     const submitBtn = page.locator('#submit-employee-form-btn');
@@ -508,65 +620,171 @@ test.describe('HR Module — Full Feature Journey E2E Tests', () => {
     await expect(posDialog).toBeHidden();
   });
 
-  test('displays account status pill in employee table and opens account management dialog', async ({ page }) => {
+  test('displays pending registrations tab and allows admin to review and approve candidate registration', async ({ page }) => {
     await page.goto('/hr');
 
-    // Account column visible
-    await expect(page.locator('th:has-text("Tài khoản")')).toBeVisible();
+    // Click "Chờ Xét Duyệt" tab
+    const pendingTabBtn = page.locator('#tab-pending');
+    await expect(pendingTabBtn).toBeVisible();
+    await pendingTabBtn.click();
 
-    // EMP-001 has "Nhân viên vận hành" pill
-    await expect(page.locator('#employee-data-table').locator('text=Nhân viên vận hành')).toBeVisible();
+    // Verify candidate row with temporary code
+    await expect(page.locator('#pending-registrations-table')).toBeVisible();
+    await expect(page.locator('text=SX-QD-001')).toBeVisible();
+    await expect(page.locator('text=Lê Văn Ứng Viên')).toBeVisible();
 
-    // EMP-002 has "Chưa cấp" pill
-    await expect(page.locator('#employee-data-table').locator('text=Chưa cấp')).toBeVisible();
+    // Click "Xem & Duyệt"
+    const reviewBtn = page.locator('button:has-text("Xem & Duyệt")').first();
+    await reviewBtn.click();
 
-    // Click "Quản lý tài khoản" for EMP-001
-    const manageBtn = page.locator('button[title="Quản lý tài khoản"]').first();
-    await manageBtn.click();
-
-    // Account management modal opens
+    // Review dialog opens
     const modal = page.locator('div[role="dialog"]');
     await expect(modal).toBeVisible();
-    await expect(modal.locator('#employee-account-modal-title')).toHaveText('Quản Lý Tài Khoản Đăng Nhập');
-    await expect(modal.locator('text=an.nguyen@its-qlsx.vn')).toBeVisible();
+    await expect(modal.locator('#approve-modal-title')).toHaveText('Xét duyệt hồ sơ đăng ký tài khoản');
+    await expect(modal.locator('text=ungvien@its-qlsx.vn')).toBeVisible();
+    await expect(modal.locator('#modal_employee_code')).toHaveValue('SX-QD-001');
 
-    // Close modal
-    const closeBtn = modal.locator('button[aria-label="Đóng"]');
-    await closeBtn.click();
+    // Submit approval
+    const approveBtn = modal.locator('button:has-text("Phê duyệt & Tạo nhân viên")');
+    await approveBtn.click();
+
+    // Modal closes
     await expect(modal).toBeHidden();
   });
 
-  test('allows creating new employee with login account provisioned', async ({ page }) => {
+  test('allows logged in user to view and edit personal profile and change password', async ({ page }) => {
+    await page.goto('/profile');
+
+    // Profile page elements
+    await expect(page.locator('h1')).toHaveText('Hồ Sơ & Tài Khoản Cá Nhân');
+    await expect(page.locator('#profile-display-name')).toHaveText('Nguyễn Văn Admin');
+    await expect(page.locator('#full_name')).toHaveValue('Nguyễn Văn Admin');
+    await expect(page.locator('#phone')).toHaveValue('0901234567');
+
+    // Edit personal details
+    await page.fill('#full_name', 'Nguyễn Văn Admin (Đã Sửa)');
+    await page.fill('#phone', '0988776655');
+    await page.fill('#date_of_birth', '1990-10-15');
+    await page.fill('#id_card_number', '001090123456');
+
+    // Save profile
+    const saveBtn = page.locator('#save-profile-btn');
+    await saveBtn.click();
+
+    // Verify personal security section
+    await expect(page.locator('text=Bảo Mật & Mật Khẩu Cá Nhân')).toBeVisible();
+    await page.fill('#new_password_input', 'NewPass123456!');
+    await page.fill('#confirm_password_input', 'NewPass123456!');
+
+    const updatePwdBtn = page.locator('#update-password-btn');
+    await updatePwdBtn.click();
+  });
+
+  test('displays smart role suggestion, role scope card, and admin security alert in approval modal', async ({ page }) => {
+    await page.goto('/hr');
+    await page.locator('#tab-pending').click();
+
+    // Click "Xem & Duyệt" on candidate with QD_SX position
+    const reviewBtn = page.locator('button:has-text("Xem & Duyệt")').first();
+    await reviewBtn.click();
+
+    const modal = page.locator('div[role="dialog"]');
+    await expect(modal).toBeVisible();
+
+    // Smart auto-suggest should select plant_manager for QD_SX position
+    const roleSelect = modal.locator('#modal_role_code');
+    await expect(roleSelect).toHaveValue('plant_manager');
+
+    // Role Scope Card should be rendered
+    await expect(modal.locator('text=Phạm vi quyền hạn vai trò:')).toBeVisible();
+    await expect(modal.locator('text=Duyệt kế hoạch sản xuất, giám sát OEE dây chuyền')).toBeVisible();
+
+    // Changing to admin role triggers security alert
+    await roleSelect.selectOption('admin');
+    await expect(modal.locator('text=Cảnh báo bảo mật quyền Admin')).toBeVisible();
+
+    // Close modal
+    await modal.locator('button[aria-label="Đóng"]').click();
+    await expect(modal).toBeHidden();
+  });
+
+  test('confirms permanent account deletion in delete employee dialog', async ({ page }) => {
     await page.goto('/hr');
 
-    const addBtn = page.locator('#add-employee-button');
-    await addBtn.click();
+    // Click Delete on first employee in table
+    const deleteBtn = page.locator('button[title="Xóa nhân viên"]').first();
+    await deleteBtn.click();
 
     const dialog = page.locator('div[role="dialog"]');
     await expect(dialog).toBeVisible();
+    await expect(dialog.locator('text=Xác nhận xóa nhân viên & Hủy tài khoản')).toBeVisible();
+    await expect(dialog.locator('text=Tài khoản đăng nhập hệ thống của nhân viên này sẽ bị xóa hoàn toàn khỏi Supabase Auth')).toBeVisible();
 
-    // Fill form
-    await page.fill('#employee_code', 'EMP-004');
-    await page.fill('#last_name', 'Đỗ');
-    await page.fill('#first_name', 'Tuấn');
-    await page.fill('#email', 'tuan.do@its-qlsx.vn');
-    await page.fill('#phone', '0944444444');
-    await page.selectOption('#department_id', mockDeptProdId);
-    await page.selectOption('#position_id', mockPosQdId);
-
-    // Toggle account creation
-    const accountToggle = page.locator('#create_account');
-    await accountToggle.check();
-
-    // Fill password and select role
-    await page.fill('#account_password', 'Tuando123456!');
-    await page.selectOption('#account_role', 'operator');
-
-    // Submit
-    const submitBtn = page.locator('#submit-employee-form-btn');
-    await submitBtn.click();
-
-    // Dialog closes
+    // Cancel deletion
+    await dialog.locator('button:has-text("Hủy")').click();
     await expect(dialog).toBeHidden();
   });
+
+  test('displays status badges and delete registration dialog in pending tab', async ({ page }) => {
+    await page.goto('/hr');
+    await page.locator('#tab-pending').click();
+
+    // Verify status badges
+    await expect(page.getByText('Chờ duyệt', { exact: true })).toBeVisible();
+    await expect(page.getByText('Bị từ chối', { exact: true })).toBeVisible();
+    await expect(page.locator('text=Số CCCD không đúng định dạng')).toBeVisible();
+
+    // Click trash button on rejected candidate
+    const trashBtn = page.locator('[data-testid="btn-delete-reg-KCS-NV-002"]');
+    await expect(trashBtn).toBeVisible();
+    await trashBtn.click();
+
+    // Verify deletion dialog
+    const deleteDialog = page.locator('div[role="dialog"]');
+    await expect(deleteDialog).toBeVisible();
+    await expect(deleteDialog.locator('text=Xóa vĩnh viễn hồ sơ đăng ký')).toBeVisible();
+    await expect(deleteDialog.locator('text=Tài khoản đăng nhập sẽ bị xóa hoàn toàn khỏi hệ thống Supabase Auth')).toBeVisible();
+
+    // Cancel deletion
+    await deleteDialog.locator('button:has-text("Hủy")').click();
+    await expect(deleteDialog).toBeHidden();
+  });
+
+  test('displays rejection details and reapply form on pending approval page', async ({ page }) => {
+    // Setup rejected profile mock
+    await page.route('**/rest/v1/profiles*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ...mockProfile,
+          status: 'rejected',
+          rejection_reason: 'Ảnh chân dung không rõ mặt và CCCD bị mờ',
+        }),
+      });
+    });
+
+    await page.goto('/pending-approval');
+
+    // Verify rejected screen
+    await expect(page.locator('text=Hồ Sơ Bị Từ Chối Phê Duyệt')).toBeVisible();
+    await expect(page.locator('text=Ảnh chân dung không rõ mặt và CCCD bị mờ')).toBeVisible();
+
+    // Click "Chỉnh sửa hồ sơ & Gửi lại xét duyệt"
+    const reapplyBtn = page.locator('[data-testid="btn-reapply"]');
+    await expect(reapplyBtn).toBeVisible();
+    await reapplyBtn.click();
+
+    // Verify edit form fields
+    await expect(page.locator('text=Chỉnh sửa & Cập nhật hồ sơ')).toBeVisible();
+    await expect(page.locator('#resubmit-fullname')).toHaveValue('Nguyễn Văn Admin');
+    await expect(page.locator('#resubmit-dept')).toBeVisible();
+    await expect(page.locator('#resubmit-pos')).toBeVisible();
+
+    // Submit reapply
+    const submitBtn = page.locator('button:has-text("Gửi lại xét duyệt")');
+    await expect(submitBtn).toBeVisible();
+    await submitBtn.click();
+  });
 });
+

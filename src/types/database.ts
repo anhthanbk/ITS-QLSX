@@ -506,6 +506,7 @@ export type Database = {
           rated_capacity_per_hour: number | null
           serial_number: string | null
           status: string
+          extra_specs: Json | null
           updated_at: string
         }
         Insert: {
@@ -522,6 +523,7 @@ export type Database = {
           rated_capacity_per_hour?: number | null
           serial_number?: string | null
           status?: string
+          extra_specs?: Json | null
           updated_at?: string
         }
         Update: {
@@ -538,6 +540,7 @@ export type Database = {
           rated_capacity_per_hour?: number | null
           serial_number?: string | null
           status?: string
+          extra_specs?: Json | null
           updated_at?: string
         }
         Relationships: [
@@ -553,6 +556,69 @@ export type Database = {
             columns: ["line_id"]
             isOneToOne: false
             referencedRelation: "production_lines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      machine_adjustments: {
+        Row: {
+          applied_to_machine: boolean
+          changed_params: Json | null
+          created_at: string
+          created_by: string | null
+          id: string
+          improvement_content: string
+          machine_id: string
+          operating_condition_before: string | null
+          performed_at: string
+          result: string
+          status_after: string
+          status_before: string
+          updated_at: string
+        }
+        Insert: {
+          applied_to_machine?: boolean
+          changed_params?: Json | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          improvement_content: string
+          machine_id: string
+          operating_condition_before?: string | null
+          performed_at?: string
+          result: string
+          status_after: string
+          status_before: string
+          updated_at?: string
+        }
+        Update: {
+          applied_to_machine?: boolean
+          changed_params?: Json | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          improvement_content?: string
+          machine_id?: string
+          operating_condition_before?: string | null
+          performed_at?: string
+          result?: string
+          status_after?: string
+          status_before?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "machine_adjustments_machine_id_fkey"
+            columns: ["machine_id"]
+            isOneToOne: false
+            referencedRelation: "machines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "machine_adjustments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1817,39 +1883,71 @@ export type Database = {
         Row: {
           avatar_url: string | null
           created_at: string
+          date_of_birth: string | null
+          department_id: string | null
           employee_id: string | null
           full_name: string
           id: string
+          id_card_number: string | null
           phone: string | null
+          position_id: string | null
+          rejection_reason: string | null
           status: string
+          temp_employee_code: string | null
           updated_at: string
         }
         Insert: {
           avatar_url?: string | null
           created_at?: string
+          date_of_birth?: string | null
+          department_id?: string | null
           employee_id?: string | null
           full_name: string
           id: string
+          id_card_number?: string | null
           phone?: string | null
+          position_id?: string | null
+          rejection_reason?: string | null
           status?: string
+          temp_employee_code?: string | null
           updated_at?: string
         }
         Update: {
           avatar_url?: string | null
           created_at?: string
+          date_of_birth?: string | null
+          department_id?: string | null
           employee_id?: string | null
           full_name?: string
           id?: string
+          id_card_number?: string | null
           phone?: string | null
+          position_id?: string | null
+          rejection_reason?: string | null
           status?: string
+          temp_employee_code?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "profiles_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "profiles_employee_id_fkey"
             columns: ["employee_id"]
             isOneToOne: true
             referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "positions"
             referencedColumns: ["id"]
           },
         ]
@@ -2371,7 +2469,80 @@ export type Database = {
       }
     }
     Functions: {
+      admin_approve_registration: {
+        Args: {
+          p_department_id?: string
+          p_direct_manager_id?: string
+          p_employee_code: string
+          p_hire_date?: string
+          p_position_id?: string
+          p_profile_id: string
+          p_role_code: string
+        }
+        Returns: Json
+      }
+      admin_delete_employee_and_account: {
+        Args: { p_employee_id: string }
+        Returns: Json
+      }
+      admin_delete_registration_profile: {
+        Args: { p_profile_id: string }
+        Returns: Json
+      }
+      admin_reject_registration: {
+        Args: { p_profile_id: string; p_reason: string }
+        Returns: Json
+      }
+      admin_reset_user_password: {
+        Args: { p_new_password: string; p_user_id: string }
+        Returns: boolean
+      }
+      admin_update_employee_with_profile: {
+        Args: {
+          p_avatar_url?: string
+          p_date_of_birth?: string
+          p_department_id: string
+          p_direct_manager_id: string
+          p_email: string
+          p_employee_id: string
+          p_first_name: string
+          p_hire_date: string
+          p_id_card_number?: string
+          p_last_name: string
+          p_new_password?: string
+          p_phone: string
+          p_position_id: string
+          p_status: string
+        }
+        Returns: Json
+      }
       authorize: { Args: { required_permission: string }; Returns: boolean }
+      generate_employee_code: {
+        Args: { p_dept_id: string; p_pos_id: string }
+        Returns: string
+      }
+      get_pending_registrations: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          created_at: string
+          date_of_birth: string
+          department_code: string
+          department_id: string
+          department_name: string
+          email: string
+          full_name: string
+          id: string
+          id_card_number: string
+          phone: string
+          position_code: string
+          position_id: string
+          position_title: string
+          rejection_reason: string
+          status: string
+          temp_employee_code: string
+        }[]
+      }
       get_user_permissions: {
         Args: { p_user_id: string }
         Returns: {
@@ -2381,39 +2552,15 @@ export type Database = {
       }
       has_permission: { Args: { p_permission: string }; Returns: boolean }
       has_role: { Args: { p_role: string }; Returns: boolean }
-      admin_provision_employee_account: {
+      resubmit_rejected_registration: {
         Args: {
-          p_employee_id: string
-          p_email: string
-          p_password?: string
-          p_role_code: string
-        }
-        Returns: Json
-      }
-      admin_unlink_employee_account: {
-        Args: {
-          p_employee_id: string
-        }
-        Returns: Json
-      }
-      admin_toggle_user_status: {
-        Args: {
-          p_user_id: string
-          p_status: string
-        }
-        Returns: Json
-      }
-      admin_change_user_role: {
-        Args: {
-          p_user_id: string
-          p_new_role_code: string
-        }
-        Returns: Json
-      }
-      admin_reset_user_password: {
-        Args: {
-          p_user_id: string
-          p_new_password: string
+          p_avatar_url?: string
+          p_date_of_birth: string
+          p_department_id: string
+          p_full_name: string
+          p_id_card_number: string
+          p_phone: string
+          p_position_id: string
         }
         Returns: Json
       }

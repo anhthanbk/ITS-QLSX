@@ -9,7 +9,6 @@ import {
   UserCheck,
   Edit,
   Hash,
-  KeyRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Employee } from '../types';
@@ -20,7 +19,6 @@ export interface EmployeeDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   onEdit: (employee: Employee) => void;
-  onManageAccount?: (employee: Employee) => void;
 }
 
 export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
@@ -28,7 +26,6 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   isOpen,
   onClose,
   onEdit,
-  onManageAccount,
 }) => {
   const { hasRole, hasPermission } = useAuth();
   const canManage = hasRole('admin') || hasPermission('hr.employee.manage') || hasPermission('master_data.manage');
@@ -72,9 +69,17 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
         {/* Banner with user avatar */}
         <div className="flex h-20 items-end bg-gradient-to-r from-primary/80 to-primary px-6">
           <div className="flex translate-y-1/2 items-center justify-between w-full">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border-4 border-card bg-primary/10 text-xl font-bold text-primary shadow-md">
-              {initial}
-            </div>
+            {employee.avatar_url ? (
+              <img
+                src={employee.avatar_url}
+                alt={fullName}
+                className="h-16 w-16 rounded-2xl border-4 border-card object-cover shadow-md"
+              />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border-4 border-card bg-primary/10 text-xl font-bold text-primary shadow-md">
+                {initial}
+              </div>
+            )}
             <Button
               variant="secondary"
               size="icon"
@@ -124,6 +129,28 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
               </div>
             </div>
 
+            {/* Date of Birth */}
+            <div className="flex items-start gap-2.5">
+              <Calendar className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+              <div>
+                <span className="text-[11px] text-muted-foreground font-medium">Ngày sinh</span>
+                <p className="text-xs font-semibold text-foreground font-mono">
+                  {employee.date_of_birth || 'Chưa cập nhật'}
+                </p>
+              </div>
+            </div>
+
+            {/* ID Card */}
+            <div className="flex items-start gap-2.5">
+              <Hash className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+              <div>
+                <span className="text-[11px] text-muted-foreground font-medium">Số CCCD / CMND</span>
+                <p className="text-xs font-semibold text-foreground font-mono">
+                  {employee.id_card_number || 'Chưa cập nhật'}
+                </p>
+              </div>
+            </div>
+
             {/* Phone */}
             <div className="flex items-start gap-2.5">
               <Phone className="h-4 w-4 text-primary shrink-0 mt-0.5" />
@@ -167,42 +194,9 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Account info card */}
-          <div className="rounded-xl border border-border bg-muted/20 p-3.5 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                {employee.account ? (
-                  <UserCheck className="h-4 w-4" />
-                ) : (
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                )}
-              </div>
-              <div>
-                <p className="font-semibold text-foreground">
-                  {employee.account
-                    ? `Tài khoản: ${employee.account.roles?.[0]?.name || 'Có tài khoản'}`
-                    : 'Chưa cấp tài khoản đăng nhập'}
-                </p>
-                <p className="text-[11px] text-muted-foreground font-mono">{employee.email || 'Chưa có email'}</p>
-              </div>
-            </div>
-
-            {employee.account && (
-              <span
-                className={
-                  employee.account.status === 'active'
-                    ? 'inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                    : 'inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                }
-              >
-                {employee.account.status === 'active' ? 'Hoạt động' : 'Tạm khóa'}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
-            <Hash className="h-3.5 w-3.5" />
-            <span>ID: {employee.id}</span>
+          {/* Password Privacy Notice */}
+          <div className="rounded-lg border border-border/80 bg-accent/30 p-2.5 text-[11px] text-muted-foreground leading-relaxed">
+            <span className="font-semibold text-foreground">Bảo mật mật khẩu:</span> Mật khẩu đăng nhập được mã hóa an toàn theo tiêu chuẩn bảo mật một chiều. Chỉ nhân viên đăng nhập tài khoản này và Admin mới có quyền cập nhật hoặc đặt lại.
           </div>
 
           {/* Footer Actions */}
@@ -210,20 +204,6 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
             <Button variant="outline" size="sm" onClick={onClose}>
               Đóng
             </Button>
-            {canManage && onManageAccount && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  onClose();
-                  onManageAccount(employee);
-                }}
-                className="flex items-center gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
-              >
-                <KeyRound className="h-3.5 w-3.5" />
-                <span>{employee.account ? 'Tài khoản' : 'Cấp tài khoản'}</span>
-              </Button>
-            )}
             {canManage && (
               <Button
                 size="sm"

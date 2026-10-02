@@ -1,9 +1,8 @@
 import React from 'react';
-import { Search, Plus, RotateCcw } from 'lucide-react';
+import { Search, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDepartments } from '../hooks/use-departments';
 import type { EmployeeStatus } from '../types';
-import { useAuth } from '@/features/auth/hooks/use-auth';
 
 export interface EmployeeFilterBarProps {
   search: string;
@@ -13,7 +12,6 @@ export interface EmployeeFilterBarProps {
   status: EmployeeStatus | 'all';
   onStatusChange: (value: EmployeeStatus | 'all') => void;
   onReset: () => void;
-  onAddNew: () => void;
 }
 
 export const EmployeeFilterBar: React.FC<EmployeeFilterBarProps> = ({
@@ -24,12 +22,8 @@ export const EmployeeFilterBar: React.FC<EmployeeFilterBarProps> = ({
   status,
   onStatusChange,
   onReset,
-  onAddNew,
 }) => {
   const { data: departments } = useDepartments();
-  const { hasRole, hasPermission } = useAuth();
-
-  const canManage = hasRole('admin') || hasPermission('hr.employee.manage') || hasPermission('master_data.manage');
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -90,19 +84,6 @@ export const EmployeeFilterBar: React.FC<EmployeeFilterBarProps> = ({
             <RotateCcw className="h-3.5 w-3.5 mr-1" />
             Đặt lại
           </Button>
-
-          {/* Add Employee Button (Permission-gated) */}
-          {canManage && (
-            <Button
-              id="add-employee-button"
-              size="sm"
-              onClick={onAddNew}
-              className="flex items-center gap-1.5"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Thêm nhân viên</span>
-            </Button>
-          )}
         </div>
       </div>
     </div>

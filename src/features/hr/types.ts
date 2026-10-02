@@ -47,6 +47,10 @@ export interface Employee {
   status: EmployeeStatus;
   created_at: string;
   updated_at: string;
+  avatar_url?: string | null;
+  date_of_birth?: string | null;
+  id_card_number?: string | null;
+  profile_id?: string | null;
   departments?: {
     id: string;
     name: string;
@@ -64,29 +68,48 @@ export interface Employee {
     last_name: string;
     employee_code: string;
   } | null;
-  account?: {
+  profiles?: {
     id: string;
-    status: 'active' | 'suspended';
-    roles: Array<{
-      id?: string;
-      code: string;
-      name: string;
-    }>;
+    avatar_url: string | null;
+    date_of_birth: string | null;
+    id_card_number: string | null;
+    full_name: string | null;
   } | null;
 }
 
-export interface SystemRole {
+export interface PendingRegistration {
   id: string;
-  code: string;
-  name: string;
-  description: string | null;
+  full_name: string;
+  avatar_url: string | null;
+  email: string;
+  phone: string | null;
+  date_of_birth: string | null;
+  id_card_number: string | null;
+  department_id: string | null;
+  position_id: string | null;
+  temp_employee_code: string | null;
+  status: 'pending' | 'rejected';
+  rejection_reason: string | null;
+  created_at: string;
+  department_name: string | null;
+  department_code: string | null;
+  position_title: string | null;
+  position_code: string | null;
 }
 
-export interface ProvisionAccountParams {
-  employeeId: string;
-  email: string;
-  password?: string;
+export interface ApproveRegistrationParams {
+  profileId: string;
+  employeeCode: string;
   roleCode: string;
+  hireDate: string;
+  departmentId?: string;
+  positionId?: string;
+  directManagerId?: string;
+}
+
+export interface RejectRegistrationParams {
+  profileId: string;
+  reason: string;
 }
 
 

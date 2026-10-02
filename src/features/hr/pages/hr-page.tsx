@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Users, UserCheck, Clock, Building2 } from 'lucide-react';
+import { Users, UserCheck, Clock, Building2, Trash2 } from 'lucide-react';
 import { PageContainer } from '@/components/layout/page-container';
 import { EmployeeFilterBar } from '../components/employee-filter-bar';
 import { EmployeeTable } from '../components/employee-table';
 import { EmployeeFormDialog } from '../components/employee-form-dialog';
 import { EmployeeDetailModal } from '../components/employee-detail-modal';
-import { EmployeeAccountModal } from '../components/employee-account-modal';
+import { PendingRegistrationsTab } from '../components/pending-registrations-tab';
 import { DepartmentTab } from '../components/department-tab';
 import { PositionTab } from '../components/position-tab';
 import {
@@ -13,6 +13,7 @@ import {
   useCreateEmployee,
   useUpdateEmployee,
   useDeleteEmployee,
+  usePendingRegistrations,
 } from '../hooks/use-employees';
 import { useDepartments } from '../hooks/use-departments';
 import type { Employee, EmployeeStatus, EmployeeFilterParams } from '../types';
@@ -21,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export const HRPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'employees' | 'departments' | 'positions'>('employees');
+  const [activeTab, setActiveTab] = useState<'employees' | 'pending' | 'departments' | 'positions'>('employees');
 
   // Filter and pagination state
   const [filters, setFilters] = useState<EmployeeFilterParams>({
@@ -36,6 +37,7 @@ export const HRPage: React.FC = () => {
   // Queries
   const { data: employeeData, isLoading, isError, refetch } = useEmployees(filters);
   const { data: departments } = useDepartments();
+  const { data: pendingRegistrations } = usePendingRegistrations();
 
   // Mutations
   const createMutation = useCreateEmployee();
@@ -47,7 +49,6 @@ export const HRPage: React.FC = () => {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
-  const [accountModalEmployee, setAccountModalEmployee] = useState<Employee | null>(null);
 
   // Handlers
   const handleSearchChange = (search: string) => {
@@ -110,7 +111,7 @@ export const HRPage: React.FC = () => {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                 <Users className="h-5 w-5" />
               </div>
               <div>
@@ -174,6 +175,24 @@ export const HRPage: React.FC = () => {
           </button>
           <button
             type="button"
+            id="tab-pending"
+            onClick={() => setActiveTab('pending')}
+            className={cn(
+              'px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors -mb-px flex items-center gap-1.5',
+              activeTab === 'pending'
+                ? 'border-primary text-primary font-bold'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <span>Chờ Xét Duyệt</span>
+            {pendingRegistrations && pendingRegistrations.length > 0 && (
+              <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                {pendingRegistrations.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             id="tab-departments"
             onClick={() => setActiveTab('departments')}
             className={cn(
@@ -211,10 +230,6 @@ export const HRPage: React.FC = () => {
               status={filters.status || 'all'}
               onStatusChange={handleStatusChange}
               onReset={handleResetFilters}
-              onAddNew={() => {
-                setEditingEmployee(null);
-                setIsFormOpen(true);
-              }}
             />
 
             <EmployeeTable
@@ -229,10 +244,11 @@ export const HRPage: React.FC = () => {
                 setIsFormOpen(true);
               }}
               onDelete={(emp) => setDeletingEmployee(emp)}
-              onManageAccount={(emp) => setAccountModalEmployee(emp)}
             />
           </div>
         )}
+
+        {activeTab === 'pending' && <PendingRegistrationsTab />}
 
         {activeTab === 'departments' && <DepartmentTab />}
 
@@ -260,14 +276,6 @@ export const HRPage: React.FC = () => {
             setEditingEmployee(emp);
             setIsFormOpen(true);
           }}
-          onManageAccount={(emp) => setAccountModalEmployee(emp)}
-        />
-
-        {/* Employee Account Management Modal */}
-        <EmployeeAccountModal
-          isOpen={!!accountModalEmployee}
-          employee={accountModalEmployee}
-          onClose={() => setAccountModalEmployee(null)}
         />
 
         {/* Delete Confirmation Dialog */}
@@ -282,15 +290,21 @@ export const HRPage: React.FC = () => {
               onClick={() => setDeletingEmployee(null)}
             />
             <div className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in-50 zoom-in-95">
-              <h3 className="text-sm font-bold text-foreground">Xác nhận xóa nhân viên</h3>
-              <p className="mt-2 text-xs text-muted-foreground">
+              <h3 className="text-sm font-bold text-destructive flex items-center gap-2">
+                <Trash2 className="h-4 w-4" />
+                <span>Xác nhận xóa nhân viên & Hủy tài khoản</span>
+              </h3>
+              <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
                 Bạn có chắc chắn muốn xóa nhân viên{' '}
                 <span className="font-semibold text-foreground">
                   {deletingEmployee.last_name} {deletingEmployee.first_name} (
                   {deletingEmployee.employee_code})
                 </span>
-                ? Hành động này không thể hoàn tác nếu nhân viên chưa có dữ liệu giao dịch liên kết.
+                ?
               </p>
+              <div className="mt-2.5 rounded-lg border border-destructive/20 bg-destructive/10 p-2.5 text-[11px] text-destructive leading-normal">
+                <strong>Lưu ý bảo mật:</strong> Tài khoản đăng nhập hệ thống của nhân viên này sẽ bị xóa hoàn toàn khỏi Supabase Auth. Nhân viên này sẽ <strong>không thể đăng nhập</strong> vào hệ thống được nữa.
+              </div>
 
               <div className="mt-5 flex items-center justify-end gap-2">
                 <Button

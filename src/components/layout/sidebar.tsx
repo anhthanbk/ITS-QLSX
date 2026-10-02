@@ -30,7 +30,12 @@ export const Sidebar: React.FC = () => {
     const initial: Record<string, boolean> = {};
     for (const item of navigationItems) {
       if (item.children) {
-        const matchesChild = item.children.some((c) => location.pathname.startsWith(c.path));
+        const matchesChild = item.children.some((c) => {
+          const basePath = c.path.split('?')[0] || c.path;
+          return c.path === '/'
+            ? location.pathname === '/'
+            : location.pathname.startsWith(basePath);
+        });
         if (matchesChild) {
           initial[item.id] = true;
         }
@@ -47,6 +52,7 @@ export const Sidebar: React.FC = () => {
   };
 
   const filteredItems = filterNavItems(navigationItems, hasPermission, hasRole);
+  const currentFullPath = location.pathname + location.search;
 
   const renderNavList = (isMobile: boolean) => (
     <div className="flex flex-1 flex-col justify-between overflow-y-auto px-3 py-4">
@@ -55,8 +61,14 @@ export const Sidebar: React.FC = () => {
           const hasChildren = item.children && item.children.length > 0;
           const isGroupOpen = !!openGroups[item.id];
           const isParentActive =
-            location.pathname === item.path ||
-            (hasChildren && item.children?.some((c) => location.pathname.startsWith(c.path)));
+            (item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)) ||
+            (hasChildren &&
+              item.children?.some((c) => {
+                const basePath = c.path.split('?')[0] || c.path;
+                return c.path === '/'
+                  ? location.pathname === '/'
+                  : location.pathname.startsWith(basePath);
+              }));
 
           const IconComponent = item.icon;
 
@@ -94,7 +106,9 @@ export const Sidebar: React.FC = () => {
                 {isGroupOpen && (
                   <ul className="mt-1 space-y-1 pl-7 pr-1" role="menu">
                     {item.children?.map((child) => {
-                      const isChildActive = location.pathname === child.path;
+                      const isChildActive = child.path.includes('?')
+                        ? currentFullPath === child.path
+                        : location.pathname === child.path;
                       return (
                         <li key={child.id} role="none">
                           <NavLink

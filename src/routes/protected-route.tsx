@@ -26,8 +26,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         className="flex min-h-screen items-center justify-center bg-slate-50"
       >
         <div className="flex flex-col items-center space-y-3">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <p className="text-xs font-medium tracking-wide text-slate-500">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-xs font-medium tracking-wide text-muted-foreground">
             Đang tải phiên xác thực...
           </p>
         </div>
@@ -38,6 +38,11 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // 1. Unauthenticated -> Redirect to login
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // 1.5. Gatekeeper: Account pending approval or rejected
+  if (user.profile && (user.profile.status === 'pending' || user.profile.status === 'rejected')) {
+    return <Navigate to="/pending-approval" replace />;
   }
 
   // 2. Permission check

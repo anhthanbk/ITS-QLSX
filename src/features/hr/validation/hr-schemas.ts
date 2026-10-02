@@ -24,44 +24,34 @@ export const employeeFormSchema = z.object({
   direct_manager_id: z.string().uuid().or(z.literal('')).nullable().optional(),
   hire_date: z.string().min(1, 'Vui lòng chọn ngày vào làm'),
   status: z.enum(['active', 'on_leave', 'terminated']),
-  create_account: z.boolean().default(false),
-  account_role: z.string().optional(),
-  account_password: z.string().optional(),
-}).superRefine((data, ctx) => {
-  if (data.create_account) {
-    if (!data.email || data.email.trim() === '') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['email'],
-        message: 'Bắt buộc nhập email để cấp tài khoản đăng nhập',
-      });
-    }
-    if (!data.account_password || data.account_password.length < 6) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['account_password'],
-        message: 'Mật khẩu phải có tối thiểu 6 ký tự',
-      });
-    }
-    if (!data.account_role || data.account_role.trim() === '') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['account_role'],
-        message: 'Vui lòng chọn vai trò hệ thống',
-      });
-    }
-  }
+  date_of_birth: z.string().or(z.literal('')).optional(),
+  id_card_number: z.string().or(z.literal('')).optional(),
+  avatar_url: z.string().or(z.literal('')).optional(),
+  new_password: z.string().min(6, 'Mật khẩu tối thiểu 6 ký tự').or(z.literal('')).optional(),
 });
 
 export type EmployeeFormValues = z.infer<typeof employeeFormSchema>;
 
-export const provisionAccountSchema = z.object({
-  email: z.string().email('Định dạng email không hợp lệ').min(1, 'Vui lòng nhập email'),
-  password: z.string().min(6, 'Mật khẩu phải có tối thiểu 6 ký tự'),
-  role_code: z.string().min(1, 'Vui lòng chọn vai trò hệ thống'),
+export const approveRegistrationSchema = z.object({
+  employee_code: z
+    .string()
+    .min(2, 'Mã nhân viên tối thiểu 2 ký tự')
+    .max(20, 'Mã nhân viên tối đa 20 ký tự')
+    .regex(/^[A-Za-z0-9_-]+$/, 'Mã nhân viên chỉ chứa chữ cái, số, gạch ngang hoặc gạch dưới'),
+  role_code: z.string().min(1, 'Vui lòng phân vai trò hệ thống'),
+  hire_date: z.string().min(1, 'Vui lòng chọn ngày chính thức vào làm'),
+  department_id: z.string().uuid('Vui lòng chọn phòng ban hợp lệ').optional(),
+  position_id: z.string().uuid('Vui lòng chọn chức danh hợp lệ').optional(),
+  direct_manager_id: z.string().uuid().or(z.literal('')).nullable().optional(),
 });
 
-export type ProvisionAccountFormValues = z.infer<typeof provisionAccountSchema>;
+export type ApproveRegistrationFormValues = z.infer<typeof approveRegistrationSchema>;
+
+export const rejectRegistrationSchema = z.object({
+  reason: z.string().min(3, 'Vui lòng cung cấp lý do từ chối (tối thiểu 3 ký tự)').max(500),
+});
+
+export type RejectRegistrationFormValues = z.infer<typeof rejectRegistrationSchema>;
 
 
 export const departmentFormSchema = z.object({

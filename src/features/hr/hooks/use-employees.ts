@@ -75,99 +75,61 @@ export function useDeleteEmployee() {
 
   return useMutation({
     mutationFn: (id: string) => deleteEmployee(id),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: EMPLOYEES_QUERY_KEY });
-      success('Đã xóa nhân viên thành công.');
+      if (res?.mode === 'terminated') {
+        success('Đã hủy tài khoản đăng nhập và chuyển trạng thái nhân viên sang Đã nghỉ việc để bảo toàn lịch sử dữ liệu.');
+      } else {
+        success('Đã xóa hoàn toàn nhân viên và hủy tài khoản đăng nhập thành công.');
+      }
     },
     onError: (err: Error) => {
-      error(err.message || 'Không thể xóa nhân viên (có thể đang có dữ liệu tham chiếu).');
+      error(err.message || 'Không thể xóa nhân viên.');
     },
   });
 }
 
-export function useProvisionAccount() {
+export const PENDING_REGISTRATIONS_KEY = ['pending_registrations'] as const;
+
+export function usePendingRegistrations() {
+  return useQuery({
+    queryKey: PENDING_REGISTRATIONS_KEY,
+    queryFn: () => import('../api/hr-api').then((m) => m.fetchPendingRegistrations()),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useApproveRegistration() {
   const queryClient = useQueryClient();
   const { success, error } = useToast();
 
   return useMutation({
-    mutationFn: (params: import('../types').ProvisionAccountParams) =>
-      import('../api/hr-api').then((m) => m.provisionEmployeeAccount(params)),
+    mutationFn: (params: import('../types').ApproveRegistrationParams) =>
+      import('../api/hr-api').then((m) => m.approveRegistration(params)),
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: PENDING_REGISTRATIONS_KEY });
       queryClient.invalidateQueries({ queryKey: EMPLOYEES_QUERY_KEY });
-      success(`Đã cấp tài khoản (${data.email}) cho nhân viên thành công.`);
+      success(`Đã duyệt hồ sơ và tạo mã nhân viên ${data.employee_code} thành công.`);
     },
     onError: (err: Error) => {
-      error(err.message || 'Không thể cấp tài khoản cho nhân viên.');
+      error(err.message || 'Không thể phê duyệt hồ sơ đăng ký.');
     },
   });
 }
 
-export function useUnlinkAccount() {
+export function useRejectRegistration() {
   const queryClient = useQueryClient();
   const { success, error } = useToast();
 
   return useMutation({
-    mutationFn: (employeeId: string) =>
-      import('../api/hr-api').then((m) => m.unlinkEmployeeAccount(employeeId)),
+    mutationFn: (params: import('../types').RejectRegistrationParams) =>
+      import('../api/hr-api').then((m) => m.rejectRegistration(params)),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: EMPLOYEES_QUERY_KEY });
-      success('Đã hủy liên kết tài khoản khỏi nhân viên.');
+      queryClient.invalidateQueries({ queryKey: PENDING_REGISTRATIONS_KEY });
+      success('Đã từ chối hồ sơ đăng ký.');
     },
     onError: (err: Error) => {
-      error(err.message || 'Không thể hủy liên kết tài khoản.');
-    },
-  });
-}
-
-export function useToggleUserStatus() {
-  const queryClient = useQueryClient();
-  const { success, error } = useToast();
-
-  return useMutation({
-    mutationFn: ({ userId, status }: { userId: string; status: 'active' | 'suspended' }) =>
-      import('../api/hr-api').then((m) => m.toggleUserStatus(userId, status)),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: EMPLOYEES_QUERY_KEY });
-      success(
-        variables.status === 'active'
-          ? 'Đã mở khóa tài khoản người dùng.'
-          : 'Đã tạm khóa tài khoản người dùng.',
-      );
-    },
-    onError: (err: Error) => {
-      error(err.message || 'Không thể thay đổi trạng thái tài khoản.');
-    },
-  });
-}
-
-export function useChangeUserRole() {
-  const queryClient = useQueryClient();
-  const { success, error } = useToast();
-
-  return useMutation({
-    mutationFn: ({ userId, roleCode }: { userId: string; roleCode: string }) =>
-      import('../api/hr-api').then((m) => m.changeUserRole(userId, roleCode)),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: EMPLOYEES_QUERY_KEY });
-      success('Đã cập nhật vai trò hệ thống thành công.');
-    },
-    onError: (err: Error) => {
-      error(err.message || 'Không thể thay đổi vai trò.');
-    },
-  });
-}
-
-export function useResetUserPassword() {
-  const { success, error } = useToast();
-
-  return useMutation({
-    mutationFn: ({ userId, newPassword }: { userId: string; newPassword: string }) =>
-      import('../api/hr-api').then((m) => m.resetUserPassword(userId, newPassword)),
-    onSuccess: () => {
-      success('Đã đặt lại mật khẩu mới cho tài khoản thành công.');
-    },
-    onError: (err: Error) => {
-      error(err.message || 'Không thể đặt lại mật khẩu.');
+      error(err.message || 'Không thể từ chối hồ sơ.');
     },
   });
 }
@@ -179,4 +141,22 @@ export function useRoles() {
     staleTime: 60 * 60 * 1000,
   });
 }
+
+export function useDeleteRegistrationProfile() {
+  const queryClient = useQueryClient();
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: (profileId: string) =>
+      import('../api/hr-api').then((m) => m.deleteRegistrationProfile(profileId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PENDING_REGISTRATIONS_KEY });
+      success('Đã xóa vĩnh viễn hồ sơ và tài khoản đăng ký thành công.');
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Không thể xóa hồ sơ đăng ký.');
+    },
+  });
+}
+
 

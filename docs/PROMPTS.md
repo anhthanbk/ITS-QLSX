@@ -65,11 +65,14 @@ Design the production-management schema with:
 - materials
 - warehouses
 - inventory transactions
-- production orders
-- production batches
+- production plans
+- production 
 - machines
 - maintenance
 - mining
+- hsse
+- financal
+- quality
 - customers
 - suppliers
 - sales/orders

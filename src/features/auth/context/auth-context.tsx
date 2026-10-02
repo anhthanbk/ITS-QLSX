@@ -2,7 +2,7 @@ import React, { createContext, useEffect, useState, useCallback, useMemo } from 
 import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
 import { fetchUserProfile, fetchUserRolesAndPermissions } from '../api/auth-api';
-import type { AuthContextValue, AuthUser } from '../types';
+import type { AuthContextValue, AuthUser, SignUpParams } from '../types';
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -88,15 +88,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const signUp = useCallback(
-    async (email: string, password: string, fullName: string, roleCode = 'operator') => {
+    async (params: SignUpParams) => {
       setIsLoading(true);
       const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
+        email: params.email,
+        password: params.password,
         options: {
           data: {
-            full_name: fullName,
-            role: roleCode,
+            full_name: params.fullName,
+            avatar_url: params.avatarUrl || null,
+            date_of_birth: params.dateOfBirth,
+            phone: params.phone || null,
+            id_card_number: params.idCardNumber || null,
+            department_id: params.departmentId,
+            position_id: params.positionId,
           },
         },
       });

@@ -116,9 +116,17 @@ export const Header: React.FC = () => {
             className="flex items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             {/* User Avatar Circle */}
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs ring-1 ring-primary/20">
-              {initial}
-            </div>
+            {user?.profile?.avatar_url ? (
+              <img
+                src={user.profile.avatar_url}
+                alt={fullName}
+                className="h-8 w-8 rounded-full object-cover ring-1 ring-primary/20"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs ring-1 ring-primary/20">
+                {initial}
+              </div>
+            )}
 
             {/* Name and role (desktop) */}
             <div className="hidden sm:flex flex-col text-left">
@@ -142,12 +150,25 @@ export const Header: React.FC = () => {
               className="absolute right-0 mt-2 w-56 origin-top-right rounded-xl border border-border bg-popover p-1.5 shadow-lg ring-1 ring-black/5 animate-in fade-in-50 zoom-in-95 z-50"
             >
               {/* Profile summary header */}
-              <div className="px-3 py-2 border-b border-border/60 mb-1">
-                <p className="text-xs font-bold text-foreground truncate">{fullName}</p>
-                <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
-                <div className="mt-1.5 flex items-center gap-1 text-[10px] text-primary font-semibold">
-                  <CheckCircle className="h-3 w-3" />
-                  <span>Vai trò: {roleName}</span>
+              <div className="px-3 py-2 border-b border-border/60 mb-1 flex items-center gap-2.5">
+                {user?.profile?.avatar_url ? (
+                  <img
+                    src={user.profile.avatar_url}
+                    alt={fullName}
+                    className="h-9 w-9 rounded-full object-cover ring-1 ring-border shrink-0"
+                  />
+                ) : (
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-sm">
+                    {initial}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-foreground truncate">{fullName}</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
+                  <div className="mt-1 flex items-center gap-1 text-[10px] text-primary font-semibold">
+                    <CheckCircle className="h-3 w-3" />
+                    <span>{roleName}</span>
+                  </div>
                 </div>
               </div>
 

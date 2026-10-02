@@ -89,7 +89,7 @@ export const ForbiddenPage: React.FC = () => {
                 await signOut();
                 navigate('/login');
               }}
-              className="ml-2 inline-flex items-center text-blue-600 hover:underline"
+              className="ml-2 inline-flex items-center text-primary hover:underline"
             >
               <LogOut className="mr-0.5 h-3 w-3" /> Đổi tài khoản
             </button>
