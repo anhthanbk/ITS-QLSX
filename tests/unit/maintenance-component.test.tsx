@@ -287,4 +287,80 @@ describe('Maintenance Components', () => {
       expect(screen.getByText('Xem Kho Tổng')).toBeInTheDocument();
     });
   });
+
+  describe('AdjustmentsTab with Admin Actions', () => {
+    it('renders adjustments with Edit and Delete buttons for Admin user', async () => {
+      const { AdjustmentsTab } = await import('@/features/maintenance/components/adjustments-tab');
+
+      vi.mock('@/features/maintenance/hooks/use-machine-adjustments', () => ({
+        useMachineAdjustments: () => ({
+          data: {
+            data: [
+              {
+                id: 'adj-1',
+                machine_id: 'm-1',
+                status_before: 'operational',
+                status_after: 'operational',
+                operating_condition_before: 'Băng tải rung lắc khi tải cao',
+                improvement_content: 'Gia cố khung đỡ và thay thế bạc đạn SKF',
+                result: 'Thiết bị hoạt động êm ái, triệt tiêu độ rung',
+                applied_to_machine: true,
+                performed_at: '2026-10-01',
+                created_at: '2026-10-01T08:00:00Z',
+                machines: { id: 'm-1', machine_code: 'MC-CRUSH-01', name: 'Máy nghiền búa sơ cấp MB-01' },
+                profiles: { id: 'tech-1', full_name: 'Nguyễn Văn Kỹ Thuật' },
+              },
+            ],
+            totalCount: 1,
+            totalPages: 1,
+          },
+          isLoading: false,
+          isError: false,
+        }),
+        useCreateMachineAdjustment: () => ({
+          mutateAsync: vi.fn(),
+          isPending: false,
+        }),
+        useUpdateMachineAdjustment: () => ({
+          mutateAsync: vi.fn(),
+          isPending: false,
+        }),
+        useDeleteMachineAdjustment: () => ({
+          mutateAsync: vi.fn(),
+          isPending: false,
+        }),
+      }));
+
+      vi.mock('@/features/maintenance/hooks/use-machines', () => ({
+        useMachineOptions: () => ({
+          data: [{ id: 'm-1', machine_code: 'MC-CRUSH-01', name: 'Máy nghiền búa sơ cấp MB-01', status: 'operational' }],
+        }),
+      }));
+
+      render(<AdjustmentsTab canManage={true} />);
+
+      expect(screen.getByText('Nhật Ký Điều Chỉnh & Cải Tiến Thiết Bị')).toBeInTheDocument();
+      expect(screen.getByText('Gia cố khung đỡ và thay thế bạc đạn SKF')).toBeInTheDocument();
+
+      // Admin should see Sửa and Xóa buttons
+      const editButton = screen.getByTitle('Sửa cải tiến thiết bị');
+      const deleteButton = screen.getByTitle('Xóa cải tiến thiết bị');
+      expect(editButton).toBeInTheDocument();
+      expect(deleteButton).toBeInTheDocument();
+
+      // Click Edit button and verify edit dialog opens
+      await userEvent.click(editButton);
+      expect(screen.getByText('Chỉnh Sửa Cải Tiến & Điều Chỉnh Thiết Bị')).toBeInTheDocument();
+      expect(screen.getByText('Lưu thay đổi')).toBeInTheDocument();
+
+      // Close edit dialog
+      const closeBtn = screen.getByRole('button', { name: /đóng/i });
+      await userEvent.click(closeBtn);
+
+      // Click Delete button and verify delete dialog opens
+      await userEvent.click(deleteButton);
+      expect(screen.getByText('Xóa Nhật Ký Cải Tiến Thiết Bị')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /xác nhận xóa/i })).toBeInTheDocument();
+    });
+  });
 });

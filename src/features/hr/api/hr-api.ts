@@ -253,7 +253,7 @@ export async function updateEmployee(id: string, values: EmployeeFormValues): Pr
     p_phone: values.phone?.trim() || '',
     p_department_id: values.department_id,
     p_position_id: values.position_id,
-    p_direct_manager_id: values.direct_manager_id || '',
+    p_direct_manager_id: values.direct_manager_id || null,
     p_hire_date: values.hire_date,
     p_status: values.status,
     p_date_of_birth: values.date_of_birth?.trim() || undefined,

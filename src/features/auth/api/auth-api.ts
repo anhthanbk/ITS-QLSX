@@ -158,20 +158,85 @@ export async function updateUserPassword(newPassword: string): Promise<void> {
 }
 
 /**
+ * Compresses an image file using Canvas API.
+ * Outputs JPEG at the given quality (0–1). Falls back to original if canvas is unavailable.
+ * @param file - The original image File
+ * @param quality - JPEG quality between 0 and 1 (default 0.6 = 60%)
+ */
+export function compressImage(file: File, quality = 0.6): Promise<File> {
+  return new Promise((resolve) => {
+    // GIF cannot be compressed via canvas reliably – return as-is
+    if (file.type === 'image/gif') {
+      resolve(file);
+      return;
+    }
+
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        // Canvas unavailable – return original
+        resolve(file);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(file);
+            return;
+          }
+          const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          });
+          resolve(compressed);
+        },
+        'image/jpeg',
+        quality,
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(file); // fallback: use original on error
+    };
+
+    img.src = objectUrl;
+  });
+}
+
+/**
  * Uploads an avatar image to the public 'avatars' bucket and returns its public URL.
+ * The image is compressed to 60% quality before upload to reduce storage usage.
  */
 export async function uploadUserAvatar(file: File, userId: string): Promise<string> {
-  // Validate file size (<= 5MB)
+  // Validate original file size (<= 5MB)
   if (file.size > 5 * 1024 * 1024) {
     throw new Error('Kích thước ảnh đại diện không được vượt quá 5MB.');
   }
 
-  const fileExt = file.name.split('.').pop() || 'png';
+  // Compress image to 60% quality before uploading
+  const compressed = await compressImage(file, 0.6);
+
+  // Always store as .jpg after compression (unless original was GIF)
+  const fileExt = compressed.type === 'image/gif' ? 'gif' : 'jpg';
   const filePath = `users/${userId}_${Date.now()}.${fileExt}`;
 
   const { error: uploadError } = await supabase.storage
     .from('avatars')
-    .upload(filePath, file, {
+    .upload(filePath, compressed, {
+      contentType: compressed.type,
       cacheControl: '3600',
       upsert: true,
     });

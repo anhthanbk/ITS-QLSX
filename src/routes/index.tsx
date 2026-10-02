@@ -9,6 +9,7 @@ import { DashboardOverview } from '@/features/auth/components/dashboard-overview
 import { HRPage } from '@/features/hr';
 import { MaintenancePage } from '@/features/maintenance';
 import { WarehousePage } from '@/features/warehouse';
+import { ProductionPage } from '@/features/production';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageContainer } from '@/components/layout/page-container';
 
@@ -78,66 +79,11 @@ export const AppRoutes: React.FC = () => {
             path="/production"
             element={<Navigate to="/production/plans" replace />}
           />
-          <Route
-            path="/production/plans"
-            element={
-              <PageContainer
-                title="Kế hoạch sản xuất"
-                description="Lập kế hoạch công suất, thời gian, chất lượng và sản lượng theo dây chuyền"
-              >
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                  <p className="text-sm text-muted-foreground">
-                    Module Kế hoạch sản xuất sẽ được triển khai chi tiết ở Phase 5.
-                  </p>
-                </div>
-              </PageContainer>
-            }
-          />
-          <Route
-            path="/production/shifts"
-            element={
-              <PageContainer
-                title="Theo dõi ca sản xuất"
-                description="Ghi nhận số đo điện, cân nguyên liệu và nhật ký vận hành ca"
-              >
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                  <p className="text-sm text-muted-foreground">
-                    Module Theo dõi ca sản xuất sẽ được triển khai chi tiết ở Phase 5.
-                  </p>
-                </div>
-              </PageContainer>
-            }
-          />
-          <Route
-            path="/production/norms"
-            element={
-              <PageContainer
-                title="Định mức Kinh tế - Kỹ thuật"
-                description="Định mức tiêu hao nguyên vật liệu, điện năng và tỷ lệ phụ phẩm"
-              >
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                  <p className="text-sm text-muted-foreground">
-                    Module Định mức sẽ được triển khai chi tiết ở Phase 5.
-                  </p>
-                </div>
-              </PageContainer>
-            }
-          />
-          <Route
-            path="/production/batches"
-            element={
-              <PageContainer
-                title="Lô thành phẩm"
-                description="Quản lý thông tin lô hàng và mã QR truy xuất nguồn gốc"
-              >
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                  <p className="text-sm text-muted-foreground">
-                    Module Lô thành phẩm sẽ được triển khai chi tiết ở Phase 5.
-                  </p>
-                </div>
-              </PageContainer>
-            }
-          />
+          <Route path="/production/plans" element={<ProductionPage />} />
+          <Route path="/production/annual-summary" element={<ProductionPage />} />
+          <Route path="/production/shifts" element={<ProductionPage />} />
+          <Route path="/production/norms" element={<ProductionPage />} />
+          <Route path="/production/batches" element={<ProductionPage />} />
 
           {/* 3. Kho - Vật Tư (Warehouse) */}
           <Route

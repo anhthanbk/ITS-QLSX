@@ -8,6 +8,7 @@ import type { Employee } from '../types';
 import { useDepartments } from '../hooks/use-departments';
 import { usePositions } from '../hooks/use-positions';
 import { uploadUserAvatar } from '@/features/auth/api/auth-api';
+import { useToast } from '@/components/feedback/use-toast';
 
 export interface EmployeeFormDialogProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export const EmployeeFormDialog: React.FC<EmployeeFormDialogProps> = ({
   isSubmitting,
 }) => {
   const { data: departments } = useDepartments();
+  const { error: toastError } = useToast();
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -88,16 +90,28 @@ export const EmployeeFormDialog: React.FC<EmployeeFormDialogProps> = ({
     const file = e.target.files?.[0];
     if (!file || !employeeToEdit) return;
 
+    // Show local preview immediately for instant feedback
+    const localPreview = URL.createObjectURL(file);
+    setAvatarPreview(localPreview);
+
     try {
       setIsUploadingAvatar(true);
       const url = await uploadUserAvatar(file, employeeToEdit.id);
+      URL.revokeObjectURL(localPreview);
       setValue('avatar_url', url);
       setAvatarPreview(url);
     } catch (err: unknown) {
+      // Revert preview on failure
+      URL.revokeObjectURL(localPreview);
+      setAvatarPreview(employeeToEdit.avatar_url || null);
       const message = err instanceof Error ? err.message : 'Không thể tải ảnh lên';
-      alert(message);
+      toastError(message, 'Lỗi tải ảnh');
     } finally {
       setIsUploadingAvatar(false);
+      // Reset input so the same file can be selected again
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -186,7 +200,8 @@ export const EmployeeFormDialog: React.FC<EmployeeFormDialogProps> = ({
             <div>
               <p className="text-xs font-semibold text-foreground">Ảnh đại diện nhân viên</p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Nhấn vào nút máy ảnh để chọn ảnh mới (JPG, PNG, WebP tối đa 5MB).
+                Nhấn vào nút máy ảnh để chọn ảnh mới (JPG, PNG, WebP, tối đa 5MB).
+                Ảnh sẽ được tự động nén 60% trước khi lưu.
               </p>
             </div>
           </div>

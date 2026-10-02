@@ -7,32 +7,42 @@ import {
   machineAdjustmentSchema,
   type MachineAdjustmentFormValues,
 } from '../validation/maintenance-schemas';
-import type { Machine } from '../types';
-import { useCreateMachineAdjustment } from '../hooks/use-machine-adjustments';
+import type { Machine, MachineAdjustment } from '../types';
+import {
+  useCreateMachineAdjustment,
+  useUpdateMachineAdjustment,
+} from '../hooks/use-machine-adjustments';
 import { MachineStatusBadge } from './maintenance-badges';
-
 import { useMachineOptions } from '../hooks/use-machines';
 
 export interface MachineAdjustmentDialogProps {
   isOpen: boolean;
   onClose: () => void;
   machine?: Machine | null;
+  adjustmentToEdit?: MachineAdjustment | null;
 }
 
 export const MachineAdjustmentDialog: React.FC<MachineAdjustmentDialogProps> = ({
   isOpen,
   onClose,
   machine,
+  adjustmentToEdit,
 }) => {
-  const { mutateAsync: createAdjustment, isPending } = useCreateMachineAdjustment();
+  const isEditing = !!adjustmentToEdit;
+  const { mutateAsync: createAdjustment, isPending: isCreating } = useCreateMachineAdjustment();
+  const { mutateAsync: updateAdjustment, isPending: isUpdating } = useUpdateMachineAdjustment();
+  const isSubmitting = isCreating || isUpdating;
+
   const { data: machineOptions } = useMachineOptions();
 
   const [paramRows, setParamRows] = useState<Array<{ key: string; value: string }>>([]);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().slice(0, 10);
 
-  const defaultMachineId = machine?.id || (machineOptions?.[0]?.id ?? '');
-  const defaultStatus = machine?.status || (machineOptions?.[0]?.status ?? 'operational');
+  const defaultMachineId =
+    adjustmentToEdit?.machine_id || machine?.id || (machineOptions?.[0]?.id ?? '');
+  const defaultStatus =
+    adjustmentToEdit?.status_before || machine?.status || (machineOptions?.[0]?.status ?? 'operational');
 
   const {
     register,
@@ -61,32 +71,56 @@ export const MachineAdjustmentDialog: React.FC<MachineAdjustmentDialogProps> = (
 
   useEffect(() => {
     if (isOpen) {
-      const initId = machine?.id || (machineOptions?.[0]?.id ?? '');
-      const initStatus = machine?.status || (machineOptions?.[0]?.status ?? 'operational');
+      if (adjustmentToEdit) {
+        reset({
+          machine_id: adjustmentToEdit.machine_id,
+          status_before: adjustmentToEdit.status_before,
+          status_after: adjustmentToEdit.status_after,
+          operating_condition_before: adjustmentToEdit.operating_condition_before || '',
+          improvement_content: adjustmentToEdit.improvement_content,
+          result: adjustmentToEdit.result,
+          applied_to_machine: adjustmentToEdit.applied_to_machine ?? true,
+          performed_at: adjustmentToEdit.performed_at,
+        });
 
-      reset({
-        machine_id: initId,
-        status_before: initStatus,
-        status_after: initStatus,
-        operating_condition_before: '',
-        improvement_content: '',
-        result: '',
-        applied_to_machine: true,
-        performed_at: todayStr,
-      });
-
-      if (machine?.extra_specs && Object.keys(machine.extra_specs).length > 0) {
-        setParamRows(
-          Object.entries(machine.extra_specs).map(([key, value]) => ({
-            key,
-            value: String(value),
-          })),
-        );
+        if (adjustmentToEdit.changed_params && Object.keys(adjustmentToEdit.changed_params).length > 0) {
+          setParamRows(
+            Object.entries(adjustmentToEdit.changed_params).map(([key, value]) => ({
+              key,
+              value: String(value),
+            })),
+          );
+        } else {
+          setParamRows([]);
+        }
       } else {
-        setParamRows([]);
+        const initId = machine?.id || (machineOptions?.[0]?.id ?? '');
+        const initStatus = machine?.status || (machineOptions?.[0]?.status ?? 'operational');
+
+        reset({
+          machine_id: initId,
+          status_before: initStatus,
+          status_after: initStatus,
+          operating_condition_before: '',
+          improvement_content: '',
+          result: '',
+          applied_to_machine: true,
+          performed_at: todayStr,
+        });
+
+        if (machine?.extra_specs && Object.keys(machine.extra_specs).length > 0) {
+          setParamRows(
+            Object.entries(machine.extra_specs).map(([key, value]) => ({
+              key,
+              value: String(value),
+            })),
+          );
+        } else {
+          setParamRows([]);
+        }
       }
     }
-  }, [isOpen, machine, machineOptions, reset, todayStr]);
+  }, [isOpen, machine, machineOptions, reset, todayStr, adjustmentToEdit]);
 
   const handleMachineChange = (mId: string) => {
     setValue('machine_id', mId);
@@ -97,6 +131,19 @@ export const MachineAdjustmentDialog: React.FC<MachineAdjustmentDialogProps> = (
     }
   };
 
+  const handleAddParamRow = () => {
+    setParamRows((prev) => [...prev, { key: '', value: '' }]);
+  };
+
+  const handleRemoveParamRow = (index: number) => {
+    setParamRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleParamChange = (index: number, field: 'key' | 'value', val: string) => {
+    setParamRows((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [field]: val } : row)),
+    );
+  };
 
   if (!isOpen) return null;
 
@@ -110,10 +157,19 @@ export const MachineAdjustmentDialog: React.FC<MachineAdjustmentDialogProps> = (
       }
     });
 
-    await createAdjustment({
+    const finalValues: MachineAdjustmentFormValues = {
       ...values,
       changed_params: Object.keys(paramsMap).length > 0 ? paramsMap : null,
-    });
+    };
+
+    if (isEditing && adjustmentToEdit) {
+      await updateAdjustment({
+        id: adjustmentToEdit.id,
+        values: finalValues,
+      });
+    } else {
+      await createAdjustment(finalValues);
+    }
 
     onClose();
   };
@@ -139,10 +195,16 @@ export const MachineAdjustmentDialog: React.FC<MachineAdjustmentDialogProps> = (
             </div>
             <div>
               <h2 id="adjustment-dialog-title" className="text-base font-bold text-foreground">
-                Ghi Nhận Điều Chỉnh, Cải Tiến Thiết Bị
+                {isEditing
+                  ? 'Chỉnh Sửa Cải Tiến & Điều Chỉnh Thiết Bị'
+                  : 'Ghi Nhận Điều Chỉnh, Cải Tiến Thiết Bị'}
               </h2>
               <p className="text-[11px] text-muted-foreground font-mono">
-                {machine ? `${machine.name} (${machine.machine_code})` : 'Cập nhật giải pháp kỹ thuật & thông số'}
+                {machine
+                  ? `${machine.name} (${machine.machine_code})`
+                  : adjustmentToEdit?.machines
+                  ? `${adjustmentToEdit.machines.name} (${adjustmentToEdit.machines.machine_code})`
+                  : 'Cập nhật giải pháp kỹ thuật & thông số'}
               </p>
             </div>
           </div>
@@ -158,116 +220,121 @@ export const MachineAdjustmentDialog: React.FC<MachineAdjustmentDialogProps> = (
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="p-6 space-y-4">
-          <input type="hidden" {...register('machine_id')} />
-          <input type="hidden" {...register('status_before')} />
+        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-5 p-6">
+          {/* Target Machine Selection */}
+          <div className="space-y-1.5">
+            <label htmlFor="machine_id" className="text-xs font-semibold text-foreground">
+              Thiết bị thực hiện cải tiến <span className="text-destructive">*</span>
+            </label>
+            <select
+              id="machine_id"
+              {...register('machine_id')}
+              value={selectedMachineId}
+              onChange={(e) => handleMachineChange(e.target.value)}
+              disabled={!!machine}
+              className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            >
+              <option value="">-- Chọn thiết bị trong xưởng --</option>
+              {machineOptions?.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.machine_code} - {m.name}
+                </option>
+              ))}
+            </select>
+            {errors.machine_id && (
+              <p className="text-[11px] text-destructive">{errors.machine_id.message}</p>
+            )}
+          </div>
 
-          {/* Machine selector if opened from global tab */}
-          {!machine && (
-            <div className="space-y-1">
-              <label htmlFor="machine_id_select" className="text-xs font-semibold text-foreground">
-                Chọn thiết bị cần điều chỉnh / cải tiến <span className="text-destructive">*</span>
+          {/* Date Performed & Status Transitions */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label htmlFor="performed_at" className="text-xs font-semibold text-foreground">
+                Ngày thực hiện <span className="text-destructive">*</span>
               </label>
-              <select
-                id="machine_id_select"
-                value={selectedMachineId}
-                onChange={(e) => handleMachineChange(e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="">-- Chọn thiết bị máy móc --</option>
-                {machineOptions?.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.machine_code} - {opt.name} ({opt.status})
-                  </option>
-                ))}
-              </select>
-              {errors.machine_id && (
-                <p className="text-[11px] text-destructive">{errors.machine_id.message}</p>
+              <input
+                id="performed_at"
+                type="date"
+                {...register('performed_at')}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              {errors.performed_at && (
+                <p className="text-[11px] text-destructive">{errors.performed_at.message}</p>
               )}
             </div>
-          )}
 
-          {/* Status before and after */}
-          <div className="rounded-xl border border-border bg-accent/15 p-4 space-y-3">
-            <div className="text-xs font-bold text-foreground uppercase tracking-wider">
-              Trạng thái vận hành thiết bị
+            <div className="space-y-1.5">
+              <label htmlFor="status_before" className="text-xs font-semibold text-foreground">
+                Trạng thái trước điều chỉnh
+              </label>
+              <select
+                id="status_before"
+                {...register('status_before')}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="operational">Hoạt động bình thường</option>
+                <option value="under_maintenance">Đang bảo dưỡng</option>
+                <option value="broken">Bị hỏng hóc</option>
+                <option value="decommissioned">Ngừng sử dụng</option>
+              </select>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-              <div>
-                <label className="text-[11px] font-semibold text-muted-foreground block mb-1">
-                  Trạng thái trước điều chỉnh
-                </label>
-                <div className="flex items-center gap-2">
-                  <MachineStatusBadge status={selectedStatusBefore} />
-                  <span className="text-xs text-muted-foreground">
-                    ({selectedStatusBefore})
-                  </span>
-                </div>
-              </div>
 
-              <div>
-                <label
-                  htmlFor="status_after"
-                  className="text-[11px] font-semibold text-foreground block mb-1"
-                >
-                  Trạng thái sau điều chỉnh <span className="text-destructive">*</span>
-                </label>
-                <select
-                  id="status_after"
-                  {...register('status_after')}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="operational">Đang vận hành (operational)</option>
-                  <option value="in_maintenance">Đang bảo dưỡng (in_maintenance)</option>
-                  <option value="standby">Dự phòng (standby)</option>
-                  <option value="breakdown">Sự cố / Hỏng (breakdown)</option>
-                  <option value="decommissioned">Ngừng sử dụng (decommissioned)</option>
-                </select>
-                {errors.status_after && (
-                  <p className="text-[11px] text-destructive mt-1">
-                    {errors.status_after.message}
-                  </p>
-                )}
-              </div>
+            <div className="space-y-1.5">
+              <label htmlFor="status_after" className="text-xs font-semibold text-foreground">
+                Trạng thái sau điều chỉnh
+              </label>
+              <select
+                id="status_after"
+                {...register('status_after')}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="operational">Hoạt động bình thường</option>
+                <option value="under_maintenance">Đang bảo dưỡng</option>
+                <option value="broken">Bị hỏng hóc</option>
+                <option value="decommissioned">Ngừng sử dụng</option>
+              </select>
             </div>
           </div>
 
-          {/* Operating condition before */}
-          <div className="space-y-1">
+          {/* Status transition preview */}
+          <div className="flex items-center gap-2 rounded-xl bg-accent/20 border border-border/80 p-2.5 text-xs">
+            <span className="text-muted-foreground font-medium">Chuyển trạng thái máy:</span>
+            <MachineStatusBadge status={selectedStatusBefore} />
+            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <MachineStatusBadge status={selectedStatusAfter} />
+          </div>
+
+          {/* Operating Condition Before */}
+          <div className="space-y-1.5">
             <label
               htmlFor="operating_condition_before"
               className="text-xs font-semibold text-foreground"
             >
-              Tình trạng hoạt động thực tế (trước điều chỉnh)
+              Hiện trạng hoạt động trước cải tiến (không bắt buộc)
             </label>
             <textarea
               id="operating_condition_before"
               rows={2}
-              placeholder="VD: Băng tải bị lệch tâm 15mm khi tải nặng 50 tấn/h; rung lắc mạnh tại cụm gối đỡ..."
+              placeholder="VD: Băng tải thường xuyên bị lệch tâm khi tải nặng vượt 80% định mức..."
               {...register('operating_condition_before')}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
             />
-            {errors.operating_condition_before && (
-              <p className="text-[11px] text-destructive">
-                {errors.operating_condition_before.message}
-              </p>
-            )}
           </div>
 
           {/* Improvement Content */}
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <label
               htmlFor="improvement_content"
               className="text-xs font-semibold text-foreground"
             >
-              Nội dung điều chỉnh, cải tiến <span className="text-destructive">*</span>
+              Nội dung điều chỉnh, biện pháp cải tiến <span className="text-destructive">*</span>
             </label>
             <textarea
               id="improvement_content"
               rows={3}
-              placeholder="VD: Gia công thay thế cụm con lăn tự lựa trung tâm, bọc thêm cao su PU chống trượt mép, căn chỉnh lại góc nghiêng máng cấp liệu..."
+              placeholder="Mô tả chi tiết giải pháp kỹ thuật, linh kiện thay thế hoặc gia công thêm..."
               {...register('improvement_content')}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
             />
             {errors.improvement_content && (
               <p className="text-[11px] text-destructive">
@@ -276,56 +343,40 @@ export const MachineAdjustmentDialog: React.FC<MachineAdjustmentDialogProps> = (
             )}
           </div>
 
-          {/* Result after adjustment */}
-          <div className="space-y-1">
+          {/* Result */}
+          <div className="space-y-1.5">
             <label htmlFor="result" className="text-xs font-semibold text-foreground">
-              Kết quả sau điều chỉnh / Nghiệm thu <span className="text-destructive">*</span>
+              Kết quả sau điều chỉnh / Đánh giá nghiệm thu <span className="text-destructive">*</span>
             </label>
             <textarea
               id="result"
               rows={2}
-              placeholder="VD: Băng chạy êm, thẳng tâm tuyệt đối, đạt công suất định mức 50 tấn/h, không còn tiếng ồn rung lắc."
+              placeholder="VD: Chạy thử không tải 30 phút và có tải 2 giờ đạt tiêu chuẩn. Băng tải không còn rung lắc..."
               {...register('result')}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none"
             />
             {errors.result && (
               <p className="text-[11px] text-destructive">{errors.result.message}</p>
             )}
           </div>
 
-          {/* Date performed */}
-          <div className="space-y-1">
-            <label htmlFor="performed_at" className="text-xs font-semibold text-foreground">
-              Ngày thực hiện <span className="text-destructive">*</span>
-            </label>
-            <input
-              id="performed_at"
-              type="date"
-              {...register('performed_at')}
-              className="w-full max-w-xs rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            {errors.performed_at && (
-              <p className="text-[11px] text-destructive">{errors.performed_at.message}</p>
-            )}
-          </div>
-
-          {/* Changed parameters */}
-          <div className="rounded-xl border border-border bg-muted/10 p-4 space-y-3">
+          {/* Key-Value Technical Specification Changes */}
+          <div className="space-y-3 rounded-2xl border border-border bg-accent/10 p-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                  Các thông số thay đổi sau điều chỉnh
-                </h3>
+                <span className="text-xs font-bold text-foreground">
+                  Thông số kỹ thuật máy móc thay đổi (nếu có)
+                </span>
                 <p className="text-[11px] text-muted-foreground">
-                  Ghi lại các thông số kỹ thuật mới sau cải tiến (ví dụ: tốc độ 1.5m/s, khe hở 20mm...)
+                  Ghi nhận sự thay đổi về kích thước, tốc độ, áp suất, công suất thực tế...
                 </p>
               </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setParamRows([...paramRows, { key: '', value: '' }])}
-                className="h-7 text-xs gap-1"
+                onClick={handleAddParamRow}
+                className="gap-1.5 text-xs bg-background"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>Thêm thông số</span>
@@ -333,50 +384,35 @@ export const MachineAdjustmentDialog: React.FC<MachineAdjustmentDialogProps> = (
             </div>
 
             {paramRows.length === 0 ? (
-              <div className="text-center py-2.5 text-[11px] text-muted-foreground border border-dashed border-border rounded-lg bg-background/50">
-                Chưa có thông số nào thay đổi. Nhấn "Thêm thông số" nếu có điều chỉnh thông số kỹ thuật.
+              <div className="rounded-xl border border-dashed border-border py-4 text-center text-xs text-muted-foreground">
+                Chưa có thông số kỹ thuật nào được thêm. Bấm "Thêm thông số" để bổ sung.
               </div>
             ) : (
               <div className="space-y-2">
-                {paramRows.map((row, index) => (
-                  <div key={index} className="flex items-center gap-2">
+                {paramRows.map((row, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
                     <input
                       type="text"
-                      placeholder="Tên thông số (VD: Tốc độ băng tải, Khe hở...)"
+                      placeholder="Tên thông số (VD: Tốc độ vòng quay)"
                       value={row.key}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setParamRows((prev) =>
-                          prev.map((item, i) => (i === index ? { ...item, key: val } : item)),
-                        );
-                      }}
-                      className="flex-1 rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      onChange={(e) => handleParamChange(idx, 'key', e.target.value)}
+                      className="flex-1 rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <input
                       type="text"
-                      placeholder="Giá trị mới (VD: 1.5 m/s, 20 mm...)"
+                      placeholder="Giá trị mới (VD: 1450 rpm)"
                       value={row.value}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setParamRows((prev) =>
-                          prev.map((item, i) => (i === index ? { ...item, value: val } : item)),
-                        );
-                      }}
-                      className="flex-1 rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      onChange={(e) => handleParamChange(idx, 'value', e.target.value)}
+                      className="flex-1 rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs font-medium focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      onClick={() => {
-                        const updated = paramRows.filter((_, i) => i !== index);
-                        setParamRows(updated);
-                      }}
-                      aria-label="Xóa thông số"
-                      className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                      onClick={() => handleRemoveParamRow(idx)}
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 ))}
@@ -409,18 +445,18 @@ export const MachineAdjustmentDialog: React.FC<MachineAdjustmentDialogProps> = (
               variant="outline"
               size="sm"
               onClick={onClose}
-              disabled={isPending}
+              disabled={isSubmitting}
             >
               Hủy
             </Button>
             <Button
               type="submit"
               size="sm"
-              disabled={isPending}
+              disabled={isSubmitting}
               className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              <span>Lưu nhật ký điều chỉnh</span>
+              {isSubmitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <span>{isSubmitting ? 'Đang lưu...' : isEditing ? 'Lưu thay đổi' : 'Lưu thông tin cải tiến'}</span>
             </Button>
           </div>
         </form>

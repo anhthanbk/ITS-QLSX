@@ -2502,7 +2502,7 @@ export type Database = {
           p_avatar_url?: string
           p_date_of_birth?: string
           p_department_id: string
-          p_direct_manager_id: string
+          p_direct_manager_id: string | null
           p_email: string
           p_employee_id: string
           p_first_name: string

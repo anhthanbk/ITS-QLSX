@@ -11,24 +11,37 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useMachineAdjustments } from '../hooks/use-machine-adjustments';
+import { usePermissions } from '@/features/auth/hooks/use-permissions';
+import {
+  useMachineAdjustments,
+  useDeleteMachineAdjustment,
+} from '../hooks/use-machine-adjustments';
 import { useMachineOptions } from '../hooks/use-machines';
 import { MachineStatusBadge } from './maintenance-badges';
 import { MachineAdjustmentDialog } from './machine-adjustment-dialog';
+import { MachineAdjustmentDeleteDialog } from './machine-adjustment-delete-dialog';
+import type { MachineAdjustment } from '../types';
 
 export interface AdjustmentsTabProps {
   canManage: boolean;
 }
 
 export const AdjustmentsTab: React.FC<AdjustmentsTabProps> = ({ canManage }) => {
+  const { isAdmin, hasRole } = usePermissions();
+  const canAdminEditDelete = isAdmin || hasRole('admin');
+
   const [search, setSearch] = useState('');
   const [selectedMachineId, setSelectedMachineId] = useState<string>('all');
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingAdjustment, setEditingAdjustment] = useState<MachineAdjustment | null>(null);
+  const [deletingAdjustment, setDeletingAdjustment] = useState<MachineAdjustment | null>(null);
 
   const { data: machineOptions } = useMachineOptions();
 
@@ -38,6 +51,8 @@ export const AdjustmentsTab: React.FC<AdjustmentsTabProps> = ({ canManage }) => 
     page,
     pageSize,
   });
+
+  const { mutateAsync: deleteAdjustment, isPending: isDeleting } = useDeleteMachineAdjustment();
 
   const adjustments = adjustmentsData?.data ?? [];
   const totalCount = adjustmentsData?.totalCount ?? 0;
@@ -51,6 +66,12 @@ export const AdjustmentsTab: React.FC<AdjustmentsTabProps> = ({ canManage }) => 
   const handleMachineFilterChange = (machineId: string) => {
     setSelectedMachineId(machineId);
     setPage(1);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingAdjustment) return;
+    await deleteAdjustment(deletingAdjustment.id);
+    setDeletingAdjustment(null);
   };
 
   return (
@@ -187,6 +208,31 @@ export const AdjustmentsTab: React.FC<AdjustmentsTabProps> = ({ canManage }) => 
                     <ArrowRight className="h-3 w-3 text-muted-foreground" />
                     <MachineStatusBadge status={adj.status_after} />
                   </div>
+
+                  {canAdminEditDelete && (
+                    <div className="flex items-center gap-1.5 ml-2 border-l border-border/80 pl-2.5">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEditingAdjustment(adj)}
+                        className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                        title="Sửa cải tiến thiết bị"
+                      >
+                        <Edit2 className="h-3 w-3 text-primary" />
+                        <span>Sửa</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDeletingAdjustment(adj)}
+                        className="h-7 px-2 text-xs gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20"
+                        title="Xóa cải tiến thiết bị"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Xóa</span>
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -276,10 +322,23 @@ export const AdjustmentsTab: React.FC<AdjustmentsTabProps> = ({ canManage }) => 
         </div>
       )}
 
-      {/* Dialog to create adjustment */}
+      {/* Dialog to create or edit adjustment */}
       <MachineAdjustmentDialog
-        isOpen={isDialogOpen}
-        onClose={() => setIsDialogOpen(false)}
+        isOpen={isDialogOpen || !!editingAdjustment}
+        adjustmentToEdit={editingAdjustment}
+        onClose={() => {
+          setIsDialogOpen(false);
+          setEditingAdjustment(null);
+        }}
+      />
+
+      {/* Dialog to confirm deletion */}
+      <MachineAdjustmentDeleteDialog
+        isOpen={!!deletingAdjustment}
+        adjustment={deletingAdjustment}
+        onClose={() => setDeletingAdjustment(null)}
+        onConfirm={handleConfirmDelete}
+        isDeleting={isDeleting}
       />
     </div>
   );

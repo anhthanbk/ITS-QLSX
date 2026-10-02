@@ -25,6 +25,7 @@ import type {
 
 type MachineUpdate = Database['public']['Tables']['machines']['Update'];
 type MachineAdjustmentInsert = Database['public']['Tables']['machine_adjustments']['Insert'];
+type MachineAdjustmentUpdate = Database['public']['Tables']['machine_adjustments']['Update'];
 type MaintenancePlanInsert = Database['public']['Tables']['maintenance_plans']['Insert'];
 type MaintenancePlanUpdate = Database['public']['Tables']['maintenance_plans']['Update'];
 type WorkOrderInsert = Database['public']['Tables']['maintenance_work_orders']['Insert'];
@@ -760,6 +761,88 @@ export async function createMachineAdjustment(
   }
 
   return data as unknown as MachineAdjustment;
+}
+
+export async function updateMachineAdjustment(
+  id: string,
+  values: Partial<MachineAdjustmentFormValues>,
+): Promise<MachineAdjustment> {
+  const payload: MachineAdjustmentUpdate = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (values.machine_id !== undefined) payload.machine_id = values.machine_id;
+  if (values.status_before !== undefined) payload.status_before = values.status_before;
+  if (values.status_after !== undefined) payload.status_after = values.status_after;
+  if (values.operating_condition_before !== undefined) {
+    payload.operating_condition_before = values.operating_condition_before?.trim() || null;
+  }
+  if (values.improvement_content !== undefined) {
+    payload.improvement_content = values.improvement_content.trim();
+  }
+  if (values.result !== undefined) payload.result = values.result.trim();
+  if (values.changed_params !== undefined) payload.changed_params = values.changed_params || null;
+  if (values.applied_to_machine !== undefined) payload.applied_to_machine = values.applied_to_machine;
+  if (values.performed_at !== undefined) payload.performed_at = values.performed_at;
+
+  const { data, error } = await supabase
+    .from('machine_adjustments')
+    .update(payload)
+    .eq('id', id)
+    .select(MACHINE_ADJUSTMENT_COLUMNS)
+    .single();
+
+  if (error) {
+    console.error('Failed to update machine adjustment:', error);
+    throw new Error(error.message);
+  }
+
+  // If applied_to_machine is checked, sync updates directly to machines table
+  if (values.applied_to_machine && values.machine_id && values.status_after) {
+    const machineUpdates: MachineUpdate = {
+      status: values.status_after,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (values.changed_params && Object.keys(values.changed_params).length > 0) {
+      const { data: currentMachine } = await supabase
+        .from('machines')
+        .select('extra_specs')
+        .eq('id', values.machine_id)
+        .single();
+
+      const existingSpecs =
+        currentMachine?.extra_specs && typeof currentMachine.extra_specs === 'object'
+          ? (currentMachine.extra_specs as Record<string, string>)
+          : {};
+
+      const updatedSpecs = { ...existingSpecs, ...values.changed_params };
+      machineUpdates.extra_specs = updatedSpecs;
+    }
+
+    const { error: updateMachineError } = await supabase
+      .from('machines')
+      .update(machineUpdates)
+      .eq('id', values.machine_id);
+
+    if (updateMachineError) {
+      console.warn('Machine adjustment updated, but failed to sync to machine:', updateMachineError);
+    }
+  }
+
+  return data as unknown as MachineAdjustment;
+}
+
+export async function deleteMachineAdjustment(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('machine_adjustments')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Failed to delete machine adjustment:', error);
+    throw new Error(error.message);
+  }
 }
 
 /* =========================================================
