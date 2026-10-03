@@ -18,7 +18,20 @@ import type {
   ProductionOrderFilterParams,
   PaginatedResult,
   ProductionMetrics,
+  AnnualPlanData,
+  AnnualPlanProductRow,
+  AnnualPlanMaterialRow,
+  PlanStatus,
 } from '../types';
+import {
+  getCalendarHours,
+  calculateOperatingHours,
+  createDefaultTimePlan,
+  computeMonthKPI,
+  sumMonthProducts,
+  sumMonthProductsByType,
+  sumMonthMaterials,
+} from '../utils/annual-plan-calc';
 import type {
   ProductionPlanFormValues,
   TechnoEconomicNormFormValues,
@@ -234,6 +247,107 @@ export async function fetchProductionLines(): Promise<ProductionLine[]> {
   return (data || []) as ProductionLine[];
 }
 
+export async function createProductionLine(
+  values: Omit<ProductionLine, 'id' | 'created_at' | 'updated_at'>,
+): Promise<ProductionLine> {
+  const { data, error } = await supabase
+    .from('production_lines')
+    .insert([
+      {
+        code: values.code.trim().toUpperCase(),
+        name: values.name.trim(),
+        department_id: values.department_id || null,
+        designed_capacity_tph: Number(values.designed_capacity_tph) || 0,
+        standard_shift_hours: Number(values.standard_shift_hours) || 8,
+        shifts_per_day: Number(values.shifts_per_day) || 3,
+        status: values.status || 'active',
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ProductionLine;
+}
+
+export async function updateProductionLine(
+  id: string,
+  values: Partial<Omit<ProductionLine, 'id' | 'created_at' | 'updated_at'>>,
+): Promise<ProductionLine> {
+  const payload: {
+    code?: string;
+    name?: string;
+    department_id?: string | null;
+    designed_capacity_tph?: number;
+    standard_shift_hours?: number;
+    shifts_per_day?: number;
+    status?: string;
+    updated_at: string;
+  } = {
+    updated_at: new Date().toISOString(),
+  };
+  if (values.code !== undefined) payload.code = values.code.trim().toUpperCase();
+  if (values.name !== undefined) payload.name = values.name.trim();
+  if (values.department_id !== undefined) payload.department_id = values.department_id || null;
+  if (values.designed_capacity_tph !== undefined)
+    payload.designed_capacity_tph = Number(values.designed_capacity_tph);
+  if (values.standard_shift_hours !== undefined)
+    payload.standard_shift_hours = Number(values.standard_shift_hours);
+  if (values.shifts_per_day !== undefined) payload.shifts_per_day = Number(values.shifts_per_day);
+  if (values.status !== undefined) payload.status = values.status;
+
+  const { data, error } = await supabase
+    .from('production_lines')
+    .update(payload)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ProductionLine;
+}
+
+export async function deleteProductionLine(id: string): Promise<void> {
+  // 1. Verify if there are existing shifts or orders for this line
+  const [shiftsRes, ordersRes] = await Promise.all([
+    supabase.from('production_shifts').select('id', { count: 'exact', head: true }).eq('line_id', id),
+    supabase.from('production_orders').select('id', { count: 'exact', head: true }).eq('line_id', id),
+  ]);
+
+  if ((shiftsRes.count || 0) > 0) {
+    throw new Error(
+      'Không thể xóa dây chuyền đã có dữ liệu theo dõi ca sản xuất. Vui lòng chuyển trạng thái sang "Tạm dừng".',
+    );
+  }
+  if ((ordersRes.count || 0) > 0) {
+    throw new Error(
+      'Không thể xóa dây chuyền đã có lệnh sản xuất. Vui lòng chuyển trạng thái sang "Tạm dừng".',
+    );
+  }
+
+  // 2. Cascade cleanup associated monthly plans and their allocations/consumptions
+  const { data: plans } = await supabase
+    .from('production_monthly_plans')
+    .select('id')
+    .eq('line_id', id);
+
+  if (plans && plans.length > 0) {
+    const planIds = plans.map((p) => p.id);
+    await Promise.all([
+      supabase.from('production_plan_products').delete().in('plan_id', planIds),
+      supabase.from('production_plan_consumptions').delete().in('plan_id', planIds),
+    ]);
+    await supabase.from('production_monthly_plans').delete().eq('line_id', id);
+  }
+
+  // 3. Clean up techno-economic norms
+  await supabase.from('techno_economic_norms').delete().eq('line_id', id);
+
+  // 4. Delete the production line record
+  const { error } = await supabase.from('production_lines').delete().eq('id', id);
+  if (error) throw error;
+}
+
 // ==========================================
 // 2. MONTHLY PRODUCTION PLANS
 // ==========================================
@@ -322,22 +436,23 @@ export async function fetchProductionPlans(
 }
 
 /**
- * Annual plan summary type — one entry per month with embedded byproducts.
+ * Fetches the entire 12-month Annual Production Plan for a specific year and line,
+ * including product allocations and material consumptions.
  */
-export interface AnnualPlanMonthData extends ProductionMonthlyPlan {
-  products: PlanProductAllocation[];
-  byproducts: PlanByproduct[];
-}
-
-/**
- * Fetches all 12 monthly plans for a given year and production line,
- * plus each plan's products and byproducts — used for the annual pivot summary table.
- */
-export async function fetchAnnualPlanSummary(
+export async function fetchAnnualProductionPlan(
   year: number,
   lineId: string,
-): Promise<AnnualPlanMonthData[]> {
-  // Step 1: fetch monthly plans (no pagination — max 12 rows)
+): Promise<AnnualPlanData> {
+  // Step 1: fetch production line info
+  const { data: lineRow } = await supabase
+    .from('production_lines')
+    .select('id, code, name')
+    .eq('id', lineId)
+    .single();
+
+  const lineName = lineRow?.name;
+
+  // Step 2: fetch monthly plans for this line and year
   const { data: planRows, error: planErr } = await supabase
     .from('production_monthly_plans')
     .select(
@@ -345,8 +460,7 @@ export async function fetchAnnualPlanSummary(
       total_calendar_hours, planned_breakdown_hours, planned_maintenance_hours, planned_shutdown_hours,
       planned_operating_hours, target_quality_rate_pct, planned_input_material_tons,
       planned_output_product_tons, planned_byproduct_tons, status, approved_by, approved_at,
-      notes, created_by, created_at, updated_at,
-      production_lines ( name, code )`,
+      notes, created_by, created_at, updated_at`,
     )
     .eq('year', year)
     .eq('line_id', lineId)
@@ -354,106 +468,346 @@ export async function fetchAnnualPlanSummary(
 
   if (planErr) throw planErr;
 
-  const rawRows = (planRows || []) as unknown as RawPlanRow[];
+  const rawPlans = (planRows || []) as unknown as RawPlanRow[];
 
-  const plans: ProductionMonthlyPlan[] = rawRows.map((row) => ({
-    id: row.id,
-    plan_code: row.plan_code,
-    line_id: row.line_id,
-    line_name: row.production_lines?.name,
-    line_code: row.production_lines?.code,
-    year: row.year,
-    month: row.month,
-    planned_capacity_tph: Number(row.planned_capacity_tph),
-    planned_recovery_rate_pct: Number(row.planned_recovery_rate_pct),
-    total_calendar_hours: Number(row.total_calendar_hours),
-    planned_breakdown_hours: Number(row.planned_breakdown_hours),
-    planned_maintenance_hours: Number(row.planned_maintenance_hours),
-    planned_shutdown_hours: Number(row.planned_shutdown_hours),
-    planned_operating_hours: Number(row.planned_operating_hours ?? 0),
-    target_quality_rate_pct: Number(row.target_quality_rate_pct),
-    planned_input_material_tons: Number(row.planned_input_material_tons),
-    planned_output_product_tons: Number(row.planned_output_product_tons),
-    planned_byproduct_tons: Number(row.planned_byproduct_tons),
-    status: row.status,
-    approved_by: row.approved_by,
-    approved_at: row.approved_at,
-    notes: row.notes,
-    created_by: row.created_by,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }));
+  let status: PlanStatus = 'draft';
+  if (rawPlans.length > 0) {
+    status = rawPlans.some((p) => p.status === 'approved') ? 'approved' : (rawPlans[0]?.status ?? 'draft');
+  }
 
-  if (plans.length === 0) return [];
+  // Initialize timePlan & targetQualityPct
+  const timePlan = createDefaultTimePlan(year);
+  const targetQualityPct: Record<number, number> = {};
+  for (let m = 1; m <= 12; m++) {
+    targetQualityPct[m] = 99.0;
+  }
+
+  const planIdToMonth = new Map<string, number>();
+
+  rawPlans.forEach((p) => {
+    const m = p.month;
+    planIdToMonth.set(p.id, m);
+    targetQualityPct[m] = Number(p.target_quality_rate_pct) || 99.0;
+    const cal = Number(p.total_calendar_hours) || getCalendarHours(year, m);
+    const maint = Number(p.planned_maintenance_hours) || 0;
+    const inc = Number(p.planned_breakdown_hours) || 0;
+    const shut = Number(p.planned_shutdown_hours) || 0;
+    timePlan[m] = {
+      month: m,
+      calendarHours: cal,
+      maintenanceHours: maint,
+      incidentHours: inc,
+      plannedShutdownHours: shut,
+      operatingHours: calculateOperatingHours(cal, maint, inc, shut),
+    };
+  });
+
+  const planIds = rawPlans.map((p) => p.id);
+
+  const productRowsMap = new Map<string, AnnualPlanProductRow>();
+  const materialRowsMap = new Map<string, AnnualPlanMaterialRow>();
+
+  if (planIds.length > 0) {
+    // Step 3: fetch products and consumptions in parallel
+    const [prodRes, consRes] = await Promise.all([
+      supabase
+        .from('production_plan_products')
+        .select(
+          `id, plan_id, product_id, allocation_pct, planned_quantity_tons,
+          products ( id, name, sku, unit_of_measure, product_type )`,
+        )
+        .in('plan_id', planIds),
+      supabase
+        .from('production_plan_consumptions')
+        .select(
+          'id, plan_id, norm_id, resource_type, resource_name, unit_of_measure, norm_rate, planned_total_consumption',
+        )
+        .in('plan_id', planIds),
+    ]);
+
+    if (prodRes.error) throw prodRes.error;
+    if (consRes.error) throw consRes.error;
+
+    // Process products
+    const rawProds = (prodRes.data || []) as unknown as Array<{
+      id: string;
+      plan_id: string;
+      product_id: string;
+      planned_quantity_tons: number | string;
+      products?: {
+        id: string;
+        name: string;
+        sku: string;
+        unit_of_measure: string;
+        product_type?: string;
+      } | null;
+    }>;
+
+    for (const item of rawProds) {
+      const month = planIdToMonth.get(item.plan_id);
+      if (!month) continue;
+      const pId = item.product_id;
+      if (!productRowsMap.has(pId)) {
+        const monthsInit: Record<number, number> = {};
+        for (let m = 1; m <= 12; m++) monthsInit[m] = 0;
+        productRowsMap.set(pId, {
+          productId: pId,
+          productName: item.products?.name || 'Sản phẩm',
+          productSku: item.products?.sku || '',
+          productType: (item.products?.product_type as 'finished_good' | 'semi_finished' | 'by_product') || 'finished_good',
+          unitOfMeasure: item.products?.unit_of_measure || 'tấn',
+          months: monthsInit,
+        });
+      }
+      productRowsMap.get(pId)!.months[month] = Number(item.planned_quantity_tons) || 0;
+    }
+
+    // Process consumptions
+    const rawCons = (consRes.data || []) as unknown as Array<{
+      id: string;
+      plan_id: string;
+      resource_type: string;
+      resource_name: string;
+      unit_of_measure: string;
+      planned_total_consumption: number | string;
+    }>;
+
+    for (const item of rawCons) {
+      const month = planIdToMonth.get(item.plan_id);
+      if (!month) continue;
+      const key = `${item.resource_type}:${item.resource_name}`;
+      if (!materialRowsMap.has(key)) {
+        const monthsInit: Record<number, number> = {};
+        for (let m = 1; m <= 12; m++) monthsInit[m] = 0;
+        let categoryGroup: 'material' | 'fuel' | 'supply' = 'material';
+        if (item.resource_type === 'fuel' || item.resource_type === 'fuel_energy') {
+          categoryGroup = 'fuel';
+        } else if (
+          item.resource_type === 'supply' ||
+          item.resource_type === 'spare_part' ||
+          item.resource_type === 'chemical' ||
+          item.resource_type === 'consumable'
+        ) {
+          categoryGroup = 'supply';
+        }
+
+        materialRowsMap.set(key, {
+          materialId: key,
+          materialName: item.resource_name,
+          materialCode: '',
+          category: item.resource_type,
+          categoryGroup,
+          unitOfMeasure: item.unit_of_measure || 'tấn',
+          months: monthsInit,
+        });
+      }
+      materialRowsMap.get(key)!.months[month] = Number(item.planned_total_consumption) || 0;
+    }
+  }
+
+  // Ensure default electricity consumption item is always present
+  const hasElectricity = Array.from(materialRowsMap.values()).some(
+    (m) => m.materialName.toLowerCase().includes('điện') || m.materialCode === 'ELEC-POWER',
+  );
+  if (!hasElectricity) {
+    const elecMonthsInit: Record<number, number> = {};
+    for (let m = 1; m <= 12; m++) elecMonthsInit[m] = 0;
+    const defaultElecKey = 'fuel:Điện năng tiêu thụ (Điện sản xuất)';
+    materialRowsMap.set(defaultElecKey, {
+      materialId: 'default-electricity',
+      materialName: 'Điện năng tiêu thụ (Điện sản xuất)',
+      materialCode: 'ELEC-POWER',
+      category: 'fuel_energy',
+      categoryGroup: 'fuel',
+      unitOfMeasure: 'kWh',
+      months: elecMonthsInit,
+    });
+  }
+
+  return {
+    year,
+    lineId,
+    lineName,
+    status,
+    products: Array.from(productRowsMap.values()),
+    materials: Array.from(materialRowsMap.values()),
+    timePlan,
+    targetQualityPct,
+  };
+}
+
+/**
+ * Saves or updates all 12 monthly plans, product allocations, and material consumptions.
+ */
+export async function saveAnnualProductionPlan(planData: AnnualPlanData): Promise<void> {
+  const { year, lineId, products, materials, timePlan, targetQualityPct, status } = planData;
+
+  // Step 1: get line code for plan_code naming
+  const { data: lineRow } = await supabase
+    .from('production_lines')
+    .select('code')
+    .eq('id', lineId)
+    .single();
+
+  const lineCode = (lineRow?.code || 'LINE').replace(/[^a-zA-Z0-9]/g, '');
+
+  // Step 2: Loop 12 months and upsert each monthly plan
+  for (let m = 1; m <= 12; m++) {
+    const t = timePlan[m] || {
+      calendarHours: getCalendarHours(year, m),
+      maintenanceHours: 0,
+      incidentHours: 0,
+      plannedShutdownHours: 0,
+      operatingHours: getCalendarHours(year, m),
+    };
+
+    const calHours = Number(t.calendarHours) || getCalendarHours(year, m);
+    const maintHours = Number(t.maintenanceHours) || 0;
+    const incHours = Number(t.incidentHours) || 0;
+    const shutHours = Number(t.plannedShutdownHours) || 0;
+    const opHours = calculateOperatingHours(calHours, maintHours, incHours, shutHours);
+
+    const totalProductMonth = sumMonthProducts(products, m);
+    const finishedProductMonth = sumMonthProductsByType(products, m, 'finished_good');
+    const byproductMonth = sumMonthProductsByType(products, m, 'by_product');
+    const rawMaterialMonth = sumMonthMaterials(materials, m, 'material');
+    const fuelMonth = sumMonthMaterials(materials, m, 'fuel');
+    const supplyMonth = sumMonthMaterials(materials, m, 'supply');
+
+    const kpi = computeMonthKPI({
+      month: m,
+      calendarHours: calHours,
+      maintenanceHours: maintHours,
+      incidentHours: incHours,
+      plannedShutdownHours: shutHours,
+      operatingHours: opHours,
+      rawMaterialTons: rawMaterialMonth,
+      fuelConsumption: fuelMonth,
+      supplyConsumption: supplyMonth,
+      totalProductTons: totalProductMonth,
+      finishedProductTons: finishedProductMonth,
+      byproductTons: byproductMonth,
+    });
+
+    const planCode = `KH-${lineCode}-${year}-T${String(m).padStart(2, '0')}`;
+    const qualityPct = Number(targetQualityPct[m]) || 99.0;
+
+    // Upsert monthly plan
+    const { data: upsertedPlan, error: planErr } = await supabase
+      .from('production_monthly_plans')
+      .upsert(
+        {
+          line_id: lineId,
+          year,
+          month: m,
+          plan_code: planCode,
+          planned_capacity_tph: Number(kpi.capacityTph.toFixed(2)),
+          planned_recovery_rate_pct: Math.min(100, Math.max(0, Number(kpi.recoveryPct.toFixed(2)))),
+          total_calendar_hours: calHours,
+          planned_breakdown_hours: incHours,
+          planned_maintenance_hours: maintHours,
+          planned_shutdown_hours: shutHours,
+          target_quality_rate_pct: qualityPct,
+          planned_input_material_tons: rawMaterialMonth,
+          planned_output_product_tons: finishedProductMonth,
+          planned_byproduct_tons: byproductMonth,
+          status,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'line_id,year,month' },
+      )
+      .select('id')
+      .single();
+
+    if (planErr) throw planErr;
+    const planId = upsertedPlan.id;
+
+    // Sync products for this month
+    await supabase.from('production_plan_products').delete().eq('plan_id', planId);
+    if (products.length > 0) {
+      const prodInserts = products.map((prod) => {
+        const qty = Number(prod.months[m]) || 0;
+        const alloc = totalProductMonth > 0 ? (qty / totalProductMonth) * 100 : 0;
+        return {
+          plan_id: planId,
+          product_id: prod.productId,
+          planned_quantity_tons: qty,
+          allocation_pct: Number(alloc.toFixed(2)),
+        };
+      });
+      const { error: insProdErr } = await supabase.from('production_plan_products').insert(prodInserts);
+      if (insProdErr) throw insProdErr;
+    }
+
+    // Sync consumptions for this month
+    await supabase.from('production_plan_consumptions').delete().eq('plan_id', planId);
+    if (materials.length > 0) {
+      const consInserts = materials.map((mat) => {
+        const qty = Number(mat.months[m]) || 0;
+        const norm = finishedProductMonth * 0.955 > 0 ? qty / (finishedProductMonth * 0.955) : 0;
+        return {
+          plan_id: planId,
+          resource_type: mat.categoryGroup,
+          resource_name: mat.materialName,
+          unit_of_measure: mat.unitOfMeasure,
+          norm_rate: Number(norm.toFixed(4)),
+          planned_total_consumption: qty,
+        };
+      });
+      const { error: insConsErr } = await supabase.from('production_plan_consumptions').insert(consInserts);
+      if (insConsErr) throw insConsErr;
+    }
+  }
+}
+
+/**
+ * Approves all monthly plans for an annual plan.
+ */
+export async function approveAnnualProductionPlan(year: number, lineId: string): Promise<void> {
+  const { error } = await supabase
+    .from('production_monthly_plans')
+    .update({
+      status: 'approved',
+      approved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('year', year)
+    .eq('line_id', lineId);
+
+  if (error) throw error;
+}
+
+/**
+ * Deletes all 12 monthly plans for an annual plan (year & lineId),
+ * along with their products and consumptions.
+ */
+export async function deleteAnnualProductionPlan(year: number, lineId: string): Promise<void> {
+  // 1. Query all monthly plan IDs for this year & line
+  const { data: plans, error: findErr } = await supabase
+    .from('production_monthly_plans')
+    .select('id')
+    .eq('year', year)
+    .eq('line_id', lineId);
+
+  if (findErr) throw findErr;
+  if (!plans || plans.length === 0) return;
 
   const planIds = plans.map((p) => p.id);
 
-  // Step 2: fetch products and byproducts in parallel
-  const [prodRes, bypRes] = await Promise.all([
-    supabase
-      .from('production_plan_products')
-      .select(
-        `id, plan_id, product_id, allocation_pct, planned_quantity_tons, target_quality_standard, notes,
-        products ( name, sku )`,
-      )
-      .in('plan_id', planIds),
-    supabase
-      .from('production_plan_byproducts')
-      .select(
-        'id, plan_id, byproduct_name, ratio_pct, planned_quantity_tons, destination_storage, notes',
-      )
-      .in('plan_id', planIds)
-      .order('byproduct_name', { ascending: true }),
+  // 2. Delete child records
+  await Promise.all([
+    supabase.from('production_plan_products').delete().in('plan_id', planIds),
+    supabase.from('production_plan_consumptions').delete().in('plan_id', planIds),
   ]);
 
-  if (prodRes.error) throw prodRes.error;
-  if (bypRes.error) throw bypRes.error;
+  // 3. Delete monthly plans
+  const { error: delErr } = await supabase
+    .from('production_monthly_plans')
+    .delete()
+    .eq('year', year)
+    .eq('line_id', lineId);
 
-  const rawProducts = (prodRes.data || []) as unknown as RawPlanProductRow[];
-  const rawByproducts = (bypRes.data || []) as unknown as RawPlanByproductRow[];
-
-  // Group products by plan_id
-  const productsByPlanId = new Map<string, PlanProductAllocation[]>();
-  for (const row of rawProducts) {
-    const prod: PlanProductAllocation = {
-      id: row.id,
-      plan_id: row.plan_id,
-      product_id: row.product_id,
-      product_name: row.products?.name,
-      product_sku: row.products?.sku,
-      allocation_pct: Number(row.allocation_pct),
-      planned_quantity_tons: Number(row.planned_quantity_tons),
-      target_quality_standard: row.target_quality_standard,
-      notes: row.notes,
-    };
-    const existing = productsByPlanId.get(row.plan_id) ?? [];
-    existing.push(prod);
-    productsByPlanId.set(row.plan_id, existing);
-  }
-
-  // Group byproducts by plan_id
-  const byproductsByPlanId = new Map<string, PlanByproduct[]>();
-  for (const row of rawByproducts) {
-    const byp: PlanByproduct = {
-      id: row.id,
-      plan_id: row.plan_id,
-      byproduct_name: row.byproduct_name,
-      ratio_pct: Number(row.ratio_pct),
-      planned_quantity_tons: Number(row.planned_quantity_tons),
-      destination_storage: row.destination_storage,
-      notes: row.notes,
-    };
-    const existing = byproductsByPlanId.get(row.plan_id) ?? [];
-    existing.push(byp);
-    byproductsByPlanId.set(row.plan_id, existing);
-  }
-
-  // Step 3: merge plans + products + byproducts
-  return plans.map((plan) => ({
-    ...plan,
-    products: productsByPlanId.get(plan.id) ?? [],
-    byproducts: byproductsByPlanId.get(plan.id) ?? [],
-  }));
+  if (delErr) throw delErr;
 }
 
 export async function fetchProductionPlanById(id: string): Promise<{

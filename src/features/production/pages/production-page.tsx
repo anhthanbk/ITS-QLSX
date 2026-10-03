@@ -1,17 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Sliders, ClipboardList, Table2 } from 'lucide-react';
+import { Calendar, Clock, Sliders, ClipboardList } from 'lucide-react';
 import { PageContainer } from '@/components/layout/page-container';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { cn } from '@/lib/utils';
 
 // Types
 import type {
-  ProductionMonthlyPlan,
   ProductionShift,
   TechnoEconomicNorm,
   ProductionOrder,
-  ProductionPlanFilterParams,
   ProductionShiftFilterParams,
   ProductionNormFilterParams,
   ProductionOrderFilterParams,
@@ -20,13 +18,6 @@ import type {
 // Hooks
 import { useProductionLines } from '../hooks/use-production-lines';
 import { useProductionMetrics } from '../hooks/use-production-metrics';
-import {
-  useProductionPlans,
-  useCreateProductionPlan,
-  useUpdateProductionPlan,
-  useApproveProductionPlan,
-  useDeleteProductionPlan,
-} from '../hooks/use-production-plans';
 import {
   useProductionShifts,
   useCreateProductionShift,
@@ -50,12 +41,7 @@ import { useProductsCatalog } from '@/features/warehouse/hooks/use-products-cata
 
 // Components
 import { ProductionMetricCards } from '../components/production-metric-cards';
-import { ProductionPlanFilterBar } from '../components/production-plan-filter-bar';
-import { ProductionPlanTable } from '../components/production-plan-table';
-import { ProductionPlanFormDialog } from '../components/production-plan-form-dialog';
-import { ProductionPlanDetailModal } from '../components/production-plan-detail-modal';
-import { ProductionPlanDeleteDialog } from '../components/production-plan-delete-dialog';
-import { ProductionAnnualSummary } from '../components/production-annual-summary';
+import { ProductionAnnualPlanner } from '../components/production-annual-planner';
 
 import { ProductionShiftFilterBar } from '../components/production-shift-filter-bar';
 import { ProductionShiftTable } from '../components/production-shift-table';
@@ -72,7 +58,7 @@ import { ProductionOrderTable } from '../components/production-order-table';
 import { ProductionOrderFormDialog } from '../components/production-order-form-dialog';
 import { ProductionOrderDetailModal } from '../components/production-order-detail-modal';
 
-type ProductionTab = 'plans' | 'annual-summary' | 'shifts' | 'norms' | 'batches';
+type ProductionTab = 'annual-plan' | 'shifts' | 'norms' | 'batches';
 
 export const ProductionPage: React.FC = () => {
   const location = useLocation();
@@ -120,11 +106,10 @@ export const ProductionPage: React.FC = () => {
 
   // Determine active tab from URL path
   const getTabFromPath = (path: string): ProductionTab => {
-    if (path.includes('/production/annual-summary')) return 'annual-summary';
     if (path.includes('/production/shifts')) return 'shifts';
     if (path.includes('/production/norms')) return 'norms';
     if (path.includes('/production/batches')) return 'batches';
-    return 'plans';
+    return 'annual-plan';
   };
 
   const [activeTab, setActiveTab] = useState<ProductionTab>(() =>
@@ -147,31 +132,7 @@ export const ProductionPage: React.FC = () => {
   const products = productsData?.data || [];
 
   // ==========================================
-  // TAB 1: PRODUCTION PLANS STATE
-  // ==========================================
-  const [planFilters, setPlanFilters] = useState<ProductionPlanFilterParams>({
-    search: '',
-    status: 'all',
-    lineId: 'all',
-    year: 'all',
-    month: 'all',
-    page: 1,
-    pageSize: 10,
-  });
-
-  const { data: plansData, isLoading: isLoadingPlans } = useProductionPlans(planFilters);
-  const createPlanMutation = useCreateProductionPlan();
-  const updatePlanMutation = useUpdateProductionPlan();
-  const approvePlanMutation = useApproveProductionPlan();
-  const deletePlanMutation = useDeleteProductionPlan();
-
-  const [isPlanFormOpen, setIsPlanFormOpen] = useState(false);
-  const [editingPlan, setEditingPlan] = useState<ProductionMonthlyPlan | null>(null);
-  const [viewingPlan, setViewingPlan] = useState<ProductionMonthlyPlan | null>(null);
-  const [deletingPlan, setDeletingPlan] = useState<ProductionMonthlyPlan | null>(null);
-
-  // ==========================================
-  // TAB 2: PRODUCTION SHIFTS STATE
+  // TAB 1: PRODUCTION SHIFTS STATE
   // ==========================================
   const [shiftFilters, setShiftFilters] = useState<ProductionShiftFilterParams>({
     search: '',
@@ -239,13 +200,9 @@ export const ProductionPage: React.FC = () => {
 
   // Dynamic header based on tab
   const tabConfigs = {
-    plans: {
-      title: 'Kế hoạch sản xuất',
-      description: 'Lập kế hoạch công suất, phân bổ thời gian và sản lượng mục tiêu theo dây chuyền',
-    },
-    'annual-summary': {
-      title: 'Bảng tổng hợp kế hoạch năm',
-      description: 'Tổng hợp chỉ tiêu sản lượng, năng suất, thời gian vận hành và phụ phẩm 12 tháng',
+    'annual-plan': {
+      title: 'Kế hoạch sản xuất năm',
+      description: 'Lập và theo dõi kế hoạch sản lượng, nguyên nhiên liệu, thời gian và chỉ số KT-KT 12 tháng',
     },
     shifts: {
       title: 'Theo dõi ca & nhập liệu',
@@ -263,15 +220,9 @@ export const ProductionPage: React.FC = () => {
 
   const tabs = [
     {
-      id: 'plans' as const,
-      label: 'Kế hoạch sản xuất',
+      id: 'annual-plan' as const,
+      label: 'Kế hoạch sản xuất năm',
       icon: Calendar,
-      count: plansData?.totalCount,
-    },
-    {
-      id: 'annual-summary' as const,
-      label: 'Tổng hợp năm',
-      icon: Table2,
     },
     {
       id: 'shifts' as const,
@@ -338,93 +289,13 @@ export const ProductionPage: React.FC = () => {
           })}
         </div>
 
-        {/* Tab 1: Kế hoạch sản xuất */}
-        {activeTab === 'plans' && (
+        {/* Tab: Kế hoạch sản xuất năm */}
+        {activeTab === 'annual-plan' && (
           <div className="space-y-4 animate-in fade-in duration-150">
-            <ProductionPlanFilterBar
-              search={planFilters.search || ''}
-              onSearchChange={(search) => setPlanFilters((prev) => ({ ...prev, search, page: 1 }))}
-              status={planFilters.status || 'all'}
-              onStatusChange={(status) => setPlanFilters((prev) => ({ ...prev, status, page: 1 }))}
-              lineId={planFilters.lineId || 'all'}
-              onLineIdChange={(lineId) => setPlanFilters((prev) => ({ ...prev, lineId, page: 1 }))}
-              year={planFilters.year || 'all'}
-              onYearChange={(year) => setPlanFilters((prev) => ({ ...prev, year, page: 1 }))}
-              month={planFilters.month || 'all'}
-              onMonthChange={(month) => setPlanFilters((prev) => ({ ...prev, month, page: 1 }))}
+            <ProductionAnnualPlanner
               lines={lines}
-              onReset={() =>
-                setPlanFilters({
-                  search: '',
-                  status: 'all',
-                  lineId: 'all',
-                  year: 'all',
-                  month: 'all',
-                  page: 1,
-                  pageSize: 10,
-                })
-              }
-              onCreate={() => {
-                setEditingPlan(null);
-                setIsPlanFormOpen(true);
-              }}
-              canManage={canManagePlans}
-            />
-
-            <ProductionPlanTable
-              data={plansData?.data || []}
-              isLoading={isLoadingPlans}
-              totalCount={plansData?.totalCount || 0}
-              page={planFilters.page}
-              pageSize={planFilters.pageSize}
-              onPageChange={(page) => setPlanFilters((prev) => ({ ...prev, page }))}
-              onView={(plan) => setViewingPlan(plan)}
-              onEdit={(plan) => {
-                setEditingPlan(plan);
-                setIsPlanFormOpen(true);
-              }}
-              onDelete={(plan) => setDeletingPlan(plan)}
-              onApprove={(plan) => approvePlanMutation.mutate(plan.id)}
               canManage={canManagePlans}
               canApprove={canApprovePlans}
-            />
-          </div>
-        )}
-
-        {/* Tab: Bảng tổng hợp năm */}
-        {activeTab === 'annual-summary' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            <ProductionAnnualSummary
-              lines={lines}
-              canManage={canManagePlans}
-              onViewMonthPlan={(plan) => setViewingPlan(plan)}
-              onCreateMonthPlan={(year, month, lineId) => {
-                setEditingPlan({
-                  id: '',
-                  plan_code: '',
-                  line_id: lineId,
-                  year,
-                  month,
-                  planned_capacity_tph: 100,
-                  planned_recovery_rate_pct: 85,
-                  total_calendar_hours: 720,
-                  planned_breakdown_hours: 12,
-                  planned_maintenance_hours: 24,
-                  planned_shutdown_hours: 12,
-                  target_quality_rate_pct: 99,
-                  planned_input_material_tons: 60000,
-                  planned_output_product_tons: 51000,
-                  planned_byproduct_tons: 6000,
-                  status: 'draft',
-                  approved_by: null,
-                  approved_at: null,
-                  notes: null,
-                  created_by: null,
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                });
-                setIsPlanFormOpen(true);
-              }}
             />
           </div>
         )}
@@ -605,45 +476,6 @@ export const ProductionPage: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* Plan Modals */}
-      <ProductionPlanFormDialog
-        isOpen={isPlanFormOpen}
-        onClose={() => setIsPlanFormOpen(false)}
-        onSubmit={async (values) => {
-          if (editingPlan) {
-            await updatePlanMutation.mutateAsync({ id: editingPlan.id, values });
-          } else {
-            await createPlanMutation.mutateAsync(values);
-          }
-          setIsPlanFormOpen(false);
-          setEditingPlan(null);
-        }}
-        initialData={editingPlan}
-        lines={lines}
-        isSubmitting={createPlanMutation.isPending || updatePlanMutation.isPending}
-      />
-
-      <ProductionPlanDetailModal
-        isOpen={!!viewingPlan}
-        onClose={() => setViewingPlan(null)}
-        plan={viewingPlan}
-        onApprove={(plan) => approvePlanMutation.mutate(plan.id)}
-        canApprove={canApprovePlans}
-      />
-
-      <ProductionPlanDeleteDialog
-        isOpen={!!deletingPlan}
-        onClose={() => setDeletingPlan(null)}
-        onConfirm={async () => {
-          if (deletingPlan) {
-            await deletePlanMutation.mutateAsync(deletingPlan.id);
-            setDeletingPlan(null);
-          }
-        }}
-        plan={deletingPlan}
-        isDeleting={deletePlanMutation.isPending}
-      />
 
       {/* Shift Modals */}
       <ProductionShiftFormDialog

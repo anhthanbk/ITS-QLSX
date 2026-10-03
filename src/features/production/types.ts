@@ -345,3 +345,101 @@ export interface ProductionMetrics {
   totalDowntimeHours: number;
   activeOrdersCount: number;
 }
+
+// ==========================================
+// 6. ANNUAL PRODUCTION PLANNING (LẬP KẾ HOẠCH SẢN XUẤT NĂM)
+// ==========================================
+
+export type MaterialCategoryGroup = 'material' | 'fuel' | 'supply';
+
+export type PlanProductClassification = 'finished_good' | 'semi_finished' | 'by_product';
+
+export interface AnnualPlanProductRow {
+  productId: string;
+  productName: string;
+  productSku: string;
+  productType?: PlanProductClassification | string;
+  unitOfMeasure: string;
+  // Monthly planned quantity: month 1..12 -> number (tấn)
+  months: Record<number, number>;
+}
+
+export interface AnnualPlanMaterialRow {
+  materialId: string;
+  materialName: string;
+  materialCode: string;
+  category: string;
+  categoryGroup: MaterialCategoryGroup;
+  unitOfMeasure: string;
+  // Monthly planned quantity: month 1..12 -> number
+  months: Record<number, number>;
+}
+
+export interface AnnualPlanTimeMonth {
+  month: number;
+  calendarHours: number; // Tự tính: số ngày trong tháng * 24
+  maintenanceHours: number; // Giờ bảo trì
+  incidentHours: number; // Giờ sự cố
+  plannedShutdownHours: number; // Giờ nghỉ trong kế hoạch
+  operatingHours: number; // Giờ vận hành = calendarHours - (maintenanceHours + incidentHours + plannedShutdownHours)
+}
+
+export interface AnnualPlanMonthKPI {
+  month: number;
+  // 1. Công suất: nguyên liệu * 0.95 / giờ vận hành (tấn/giờ)
+  capacityTph: number;
+  // 2. Năng suất: tổng THÀNH PHẨM * 0.955 / giờ vận hành (tấn/giờ) - chỉ tính thành phẩm
+  productivityTph: number;
+  // 3. Tỷ lệ thu hồi thành phẩm từ nguyên liệu: (tổng thành phẩm * 0.955) / (nguyên liệu * 0.95) * 100%
+  recoveryPct: number;
+  // 4. Tỷ lệ thu hồi phụ phẩm từ nguyên liệu: (tổng phụ phẩm * 0.955) / (nguyên liệu * 0.95) * 100%
+  byproductRecoveryPct: number;
+  // 5. Định mức tiêu hao điện: tiêu hao điện (kWh) / (tổng thành phẩm * 0.955)
+  electricityNorm: number;
+  recoveryFormula?: number; // Tùy chọn cũ
+  // 6. % giờ đối với tổng giờ tháng
+  pctOperatingHours: number;
+  pctMaintenanceHours: number;
+  pctIncidentHours: number;
+  pctShutdownHours: number;
+  // 7. Định mức KT-KT: tính theo (tổng THÀNH PHẨM * 0.955)
+  rawMaterialNorm: number; // nguyên liệu * 0.95 / (thành phẩm * 0.955)
+  fuelNorm: number;        // tiêu hao nhiên liệu / (thành phẩm * 0.955)
+  supplyNorm: number;      // tiêu hao vật tư / (thành phẩm * 0.955)
+}
+
+export function normalizeProductType(type?: string | null): PlanProductClassification {
+  if (!type) return 'finished_good';
+  const lower = type.toLowerCase().trim();
+  if (
+    lower === 'by_product' ||
+    lower === 'byproduct' ||
+    lower === 'phụ phẩm' ||
+    lower.includes('by_product') ||
+    lower.includes('phụ phẩm')
+  ) {
+    return 'by_product';
+  }
+  if (
+    lower === 'semi_finished' ||
+    lower === 'semifinished' ||
+    lower === 'bán thành phẩm' ||
+    lower.includes('semi_finished') ||
+    lower.includes('bán thành')
+  ) {
+    return 'semi_finished';
+  }
+  return 'finished_good';
+}
+
+export interface AnnualPlanData {
+  year: number;
+  lineId: string;
+  lineName?: string;
+  status: PlanStatus;
+  products: AnnualPlanProductRow[];
+  materials: AnnualPlanMaterialRow[];
+  timePlan: Record<number, AnnualPlanTimeMonth>;
+  targetQualityPct: Record<number, number>; // Month 1..12 -> %
+}
+

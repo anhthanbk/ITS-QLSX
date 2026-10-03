@@ -78,15 +78,9 @@ export const navigationItems: NavItem[] = [
     ],
     children: [
       {
-        id: 'production-plans',
-        title: 'Kế hoạch sản xuất',
-        path: '/production/plans',
-        requiredPermission: ['production.plan.view', 'production.plan.read'],
-      },
-      {
-        id: 'production-annual-summary',
-        title: 'Bảng tổng hợp năm',
-        path: '/production/annual-summary',
+        id: 'production-annual-plan',
+        title: 'Kế hoạch sản xuất năm',
+        path: '/production/annual-plan',
         requiredPermission: ['production.plan.view', 'production.plan.read'],
       },
       {
