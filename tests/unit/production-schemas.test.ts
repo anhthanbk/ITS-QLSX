@@ -111,6 +111,65 @@ describe('Production Module Validation Schemas', () => {
       expect(result.success).toBe(true);
     });
 
+    it('validates a shift with detailed materials, products, and downtime breakdown', () => {
+      const complexShift = {
+        shift_code: 'CA-20261001-LINE01-S1',
+        line_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+        shift_date: '2026-10-01',
+        shift_number: 2,
+        standard_shift_hours: 8,
+        total_downtime_hours: 1.5,
+        raw_material_input_tons: 500,
+        product_output_tons: 400,
+        byproduct_output_tons: 50,
+        products_output: [
+          {
+            product_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+            product_name: 'Cát thạch anh mịn',
+            product_sku: 'CAT-01',
+            quantity_tons: 300,
+            is_out_of_plan: false,
+          },
+          {
+            product_name: 'Cát thô đặc biệt',
+            product_sku: 'CAT-EXTRA',
+            quantity_tons: 100,
+            is_out_of_plan: true,
+          },
+        ],
+        materials_consumption: [
+          {
+            material_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+            resource_name: 'Điện năng 3 pha',
+            category: 'fuel' as const,
+            unit_of_measure: 'kWh',
+            planned_norm: 15000,
+            actual_quantity: 14200,
+          },
+          {
+            resource_name: 'Dầu DO máy phát phụ',
+            category: 'fuel' as const,
+            unit_of_measure: 'Lít',
+            actual_quantity: 50,
+          },
+        ],
+        downtime_breakdown: {
+          maintenance_hours: 0.5,
+          maintenance_note: 'Bôi trơn băng tải định kỳ',
+          incident_hours: 1.0,
+          incident_category: 'mechanical',
+          incident_reason: 'Kẹt đá buồng nghiền',
+          incident_action: 'Dừng cấp liệu, dùng cẩu gắp dị vật ra khỏi buồng',
+          planned_shutdown_hours: 0,
+          planned_shutdown_reason: '',
+          total_downtime_hours: 1.5,
+        },
+      };
+
+      const result = productionShiftSchema.safeParse(complexShift);
+      expect(result.success).toBe(true);
+    });
+
     it('rejects shift numbers outside 1-3', () => {
       const invalidShift = {
         shift_code: 'CA-01',

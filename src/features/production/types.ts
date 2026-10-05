@@ -112,6 +112,37 @@ export interface TechnoEconomicNorm {
 // 3. Shifts & Operations
 export type ShiftStatus = 'in_progress' | 'completed' | 'verified';
 
+export interface ShiftMaterialConsumption {
+  material_id?: string;
+  resource_name: string;
+  category: 'material' | 'fuel' | 'supply';
+  unit_of_measure: string;
+  planned_norm?: number;
+  actual_quantity: number;
+  notes?: string;
+}
+
+export interface ShiftProductOutput {
+  product_id?: string;
+  product_name: string;
+  product_sku: string;
+  unit_of_measure: string;
+  is_out_of_plan: boolean;
+  quantity_tons: number;
+}
+
+export interface ShiftDowntimeBreakdown {
+  maintenance_hours: number;
+  maintenance_note?: string;
+  incident_hours: number;
+  incident_category?: string;
+  incident_reason?: string;
+  incident_action?: string;
+  planned_shutdown_hours: number;
+  planned_shutdown_reason?: string;
+  total_downtime_hours: number;
+}
+
 export interface ProductionShift {
   id: string;
   shift_code: string;
@@ -133,6 +164,9 @@ export interface ProductionShift {
   status: ShiftStatus;
   verified_by: string | null;
   notes: string | null;
+  materials_consumption?: ShiftMaterialConsumption[];
+  products_output?: ShiftProductOutput[];
+  downtime_breakdown?: ShiftDowntimeBreakdown;
   created_at: string;
   updated_at: string;
 }

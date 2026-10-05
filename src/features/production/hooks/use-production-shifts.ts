@@ -9,6 +9,7 @@ import {
   createShiftDowntime,
   createShiftMeterReading,
   createShiftLog,
+  fetchShiftPlanContext,
 } from '../api/production-api';
 import type { ProductionShiftFilterParams } from '../types';
 import type {
@@ -18,6 +19,15 @@ import type {
   ShiftLogFormValues,
 } from '../validation/production-schemas';
 import { useToast } from '@/components/feedback/use-toast';
+
+export function useShiftPlanContext(lineId: string, shiftDate: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['shift-plan-context', lineId, shiftDate],
+    queryFn: () => fetchShiftPlanContext(lineId, shiftDate),
+    enabled: enabled && !!lineId && !!shiftDate,
+    staleTime: 60 * 1000,
+  });
+}
 
 export function useProductionShifts(params: ProductionShiftFilterParams) {
   return useQuery({

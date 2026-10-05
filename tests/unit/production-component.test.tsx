@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProductionMetricCards } from '@/features/production/components/production-metric-cards';
 import { ProductionPlanFilterBar } from '@/features/production/components/production-plan-filter-bar';
 import { ProductionPlanTable } from '@/features/production/components/production-plan-table';
@@ -188,14 +189,20 @@ describe('Production UI Components Tests', () => {
   });
 
   describe('ProductionShiftFormDialog', () => {
+    const testQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
     it('returns null when isOpen is false', () => {
       const { container } = render(
-        <ProductionShiftFormDialog
-          isOpen={false}
-          onClose={vi.fn()}
-          onSubmit={vi.fn()}
-          lines={mockLines}
-        />,
+        <QueryClientProvider client={testQueryClient}>
+          <ProductionShiftFormDialog
+            isOpen={false}
+            onClose={vi.fn()}
+            onSubmit={vi.fn()}
+            lines={mockLines}
+          />
+        </QueryClientProvider>,
       );
       expect(container.firstChild).toBeNull();
     });

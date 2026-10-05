@@ -100,7 +100,51 @@ export const technoEconomicNormSchema = z.object({
 
 export type TechnoEconomicNormFormValues = z.infer<typeof technoEconomicNormSchema>;
 
-// 3. Production Shift Schema
+// 3. Shift Detailed Sub-schemas
+export const shiftMaterialConsumptionSchema = z.object({
+  material_id: z.string().optional(),
+  resource_name: z.string().min(1, 'Tên nguyên nhiên liệu không được để trống'),
+  category: z.enum(['material', 'fuel', 'supply']).default('material'),
+  unit_of_measure: z.string().default('tấn'),
+  planned_norm: z.number().optional().default(0),
+  actual_quantity: z
+    .number({ invalid_type_error: 'Số lượng tiêu hao phải là số' })
+    .min(0, 'Không được âm')
+    .default(0),
+  notes: z.string().optional().nullable(),
+});
+
+export type ShiftMaterialConsumptionFormValues = z.infer<typeof shiftMaterialConsumptionSchema>;
+
+export const shiftProductOutputSchema = z.object({
+  product_id: z.string().optional(),
+  product_name: z.string().min(1, 'Tên sản phẩm không được để trống'),
+  product_sku: z.string().optional().default(''),
+  unit_of_measure: z.string().default('tấn'),
+  is_out_of_plan: z.boolean().default(false),
+  quantity_tons: z
+    .number({ invalid_type_error: 'Sản lượng phải là số' })
+    .min(0, 'Không được âm')
+    .default(0),
+});
+
+export type ShiftProductOutputFormValues = z.infer<typeof shiftProductOutputSchema>;
+
+export const shiftDowntimeBreakdownSchema = z.object({
+  maintenance_hours: z.number().min(0, 'Giờ bảo trì không được âm').default(0),
+  maintenance_note: z.string().optional().nullable(),
+  incident_hours: z.number().min(0, 'Giờ sự cố không được âm').default(0),
+  incident_category: z.string().optional().nullable(),
+  incident_reason: z.string().optional().nullable(),
+  incident_action: z.string().optional().nullable(),
+  planned_shutdown_hours: z.number().min(0, 'Giờ nghỉ kế hoạch không được âm').default(0),
+  planned_shutdown_reason: z.string().optional().nullable(),
+  total_downtime_hours: z.number().min(0).default(0),
+});
+
+export type ShiftDowntimeBreakdownFormValues = z.infer<typeof shiftDowntimeBreakdownSchema>;
+
+// Production Shift Schema
 export const productionShiftSchema = z.object({
   shift_code: z
     .string()
@@ -133,6 +177,9 @@ export const productionShiftSchema = z.object({
   operator_employee_id: z.string().uuid().optional().nullable(),
   status: z.enum(['in_progress', 'completed', 'verified']).default('completed'),
   notes: z.string().optional().nullable(),
+  materials_consumption: z.array(shiftMaterialConsumptionSchema).default([]),
+  products_output: z.array(shiftProductOutputSchema).default([]),
+  downtime_breakdown: shiftDowntimeBreakdownSchema.optional(),
 });
 
 export type ProductionShiftFormValues = z.infer<typeof productionShiftSchema>;

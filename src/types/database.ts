@@ -1760,6 +1760,9 @@ export type Database = {
           notes: string | null
           operator_employee_id: string | null
           product_output_tons: number
+          materials_consumption: Json
+          products_output: Json
+          downtime_breakdown: Json
           raw_material_input_tons: number
           running_hours: number | null
           shift_code: string
@@ -1778,6 +1781,9 @@ export type Database = {
           created_at?: string
           id?: string
           line_id: string
+          materials_consumption?: Json
+          products_output?: Json
+          downtime_breakdown?: Json
           notes?: string | null
           operator_employee_id?: string | null
           product_output_tons?: number
@@ -1799,6 +1805,9 @@ export type Database = {
           created_at?: string
           id?: string
           line_id?: string
+          materials_consumption?: Json
+          products_output?: Json
+          downtime_breakdown?: Json
           notes?: string | null
           operator_employee_id?: string | null
           product_output_tons?: number
