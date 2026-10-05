@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Calendar, Clock, Sliders, ClipboardList } from 'lucide-react';
+import { Calendar, Clock } from 'lucide-react';
 import { PageContainer } from '@/components/layout/page-container';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { cn } from '@/lib/utils';
@@ -8,11 +8,8 @@ import { cn } from '@/lib/utils';
 // Types
 import type {
   ProductionShift,
-  TechnoEconomicNorm,
-  ProductionOrder,
   ProductionShiftFilterParams,
-  ProductionNormFilterParams,
-  ProductionOrderFilterParams,
+  ProductionMetricsFilterParams,
 } from '../types';
 
 // Hooks
@@ -25,40 +22,19 @@ import {
   useVerifyProductionShift,
   useDeleteProductionShift,
 } from '../hooks/use-production-shifts';
-import {
-  useProductionNorms,
-  useCreateProductionNorm,
-  useUpdateProductionNorm,
-  useDeleteProductionNorm,
-} from '../hooks/use-production-norms';
-import {
-  useProductionOrders,
-  useCreateProductionOrder,
-  useUpdateProductionOrder,
-  useDeleteProductionOrder,
-} from '../hooks/use-production-orders';
-import { useProductsCatalog } from '@/features/warehouse/hooks/use-products-catalog';
 
 // Components
 import { ProductionMetricCards } from '../components/production-metric-cards';
+import { ProductionMetricFilterBar } from '../components/production-metric-filter-bar';
+import { ProductionConsumptionNormsBar } from '../components/production-consumption-norms-bar';
 import { ProductionAnnualPlanner } from '../components/production-annual-planner';
-
 import { ProductionShiftFilterBar } from '../components/production-shift-filter-bar';
 import { ProductionShiftTable } from '../components/production-shift-table';
 import { ProductionShiftFormDialog } from '../components/production-shift-form-dialog';
 import { ProductionShiftDetailModal } from '../components/production-shift-detail-modal';
+import { ProductionShiftDeleteDialog } from '../components/production-shift-delete-dialog';
 
-import { ProductionNormFilterBar } from '../components/production-norm-filter-bar';
-import { ProductionNormTable } from '../components/production-norm-table';
-import { ProductionNormFormDialog } from '../components/production-norm-form-dialog';
-import { ProductionNormDeleteDialog } from '../components/production-norm-delete-dialog';
-
-import { ProductionOrderFilterBar } from '../components/production-order-filter-bar';
-import { ProductionOrderTable } from '../components/production-order-table';
-import { ProductionOrderFormDialog } from '../components/production-order-form-dialog';
-import { ProductionOrderDetailModal } from '../components/production-order-detail-modal';
-
-type ProductionTab = 'annual-plan' | 'shifts' | 'norms' | 'batches';
+type ProductionTab = 'annual-plan' | 'shifts';
 
 export const ProductionPage: React.FC = () => {
   const location = useLocation();
@@ -91,24 +67,14 @@ export const ProductionPage: React.FC = () => {
     hasRole('production_lead') ||
     hasPermission('production.shift.verify');
 
-  const canManageNorms =
+  const canDeleteShifts =
     hasRole('admin') ||
     hasRole('plant_manager') ||
-    hasRole('production_lead') ||
-    hasPermission('master_data.manage');
-
-  const canManageOrders =
-    hasRole('admin') ||
-    hasRole('plant_manager') ||
-    hasRole('production_lead') ||
-    hasPermission('production.plan.create') ||
-    hasPermission('master_data.manage');
+    hasPermission('production.shift.delete');
 
   // Determine active tab from URL path
   const getTabFromPath = (path: string): ProductionTab => {
     if (path.includes('/production/shifts')) return 'shifts';
-    if (path.includes('/production/norms')) return 'norms';
-    if (path.includes('/production/batches')) return 'batches';
     return 'annual-plan';
   };
 
@@ -127,9 +93,16 @@ export const ProductionPage: React.FC = () => {
 
   // Shared master data
   const { data: lines = [] } = useProductionLines();
-  const { data: metrics, isLoading: isLoadingMetrics } = useProductionMetrics();
-  const { data: productsData } = useProductsCatalog({ page: 1, pageSize: 50 });
-  const products = productsData?.data || [];
+
+  // Metrics filters state (lineId, month, year)
+  const now = new Date();
+  const [metricFilters, setMetricFilters] = useState<ProductionMetricsFilterParams>({
+    lineId: 'all',
+    month: now.getMonth() + 1,
+    year: now.getFullYear(),
+  });
+
+  const { data: metrics, isLoading: isLoadingMetrics } = useProductionMetrics(metricFilters);
 
   // ==========================================
   // TAB 1: PRODUCTION SHIFTS STATE
@@ -154,49 +127,7 @@ export const ProductionPage: React.FC = () => {
   const [isShiftFormOpen, setIsShiftFormOpen] = useState(false);
   const [editingShift, setEditingShift] = useState<ProductionShift | null>(null);
   const [viewingShift, setViewingShift] = useState<ProductionShift | null>(null);
-
-  // ==========================================
-  // TAB 3: TECHNO-ECONOMIC NORMS STATE
-  // ==========================================
-  const [normFilters, setNormFilters] = useState<ProductionNormFilterParams>({
-    search: '',
-    lineId: 'all',
-    resourceType: 'all',
-    isActive: 'all',
-    page: 1,
-    pageSize: 10,
-  });
-
-  const { data: normsData, isLoading: isLoadingNorms } = useProductionNorms(normFilters);
-  const createNormMutation = useCreateProductionNorm();
-  const updateNormMutation = useUpdateProductionNorm();
-  const deleteNormMutation = useDeleteProductionNorm();
-
-  const [isNormFormOpen, setIsNormFormOpen] = useState(false);
-  const [editingNorm, setEditingNorm] = useState<TechnoEconomicNorm | null>(null);
-  const [deletingNorm, setDeletingNorm] = useState<TechnoEconomicNorm | null>(null);
-
-  // ==========================================
-  // TAB 4: PRODUCTION ORDERS & BATCHES STATE
-  // ==========================================
-  const [orderFilters, setOrderFilters] = useState<ProductionOrderFilterParams>({
-    search: '',
-    status: 'all',
-    priority: 'all',
-    lineId: 'all',
-    productId: 'all',
-    page: 1,
-    pageSize: 10,
-  });
-
-  const { data: ordersData, isLoading: isLoadingOrders } = useProductionOrders(orderFilters);
-  const createOrderMutation = useCreateProductionOrder();
-  const updateOrderMutation = useUpdateProductionOrder();
-  const deleteOrderMutation = useDeleteProductionOrder();
-
-  const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
-  const [editingOrder, setEditingOrder] = useState<ProductionOrder | null>(null);
-  const [viewingOrder, setViewingOrder] = useState<ProductionOrder | null>(null);
+  const [deletingShift, setDeletingShift] = useState<ProductionShift | null>(null);
 
   // Dynamic header based on tab
   const tabConfigs = {
@@ -207,14 +138,6 @@ export const ProductionPage: React.FC = () => {
     shifts: {
       title: 'Theo dõi ca & nhập liệu',
       description: 'Ghi nhận số đo cân, công tơ điện nước, thời gian dừng chuyền và nhật ký ca',
-    },
-    norms: {
-      title: 'Định mức Kinh tế - Kỹ thuật',
-      description: 'Quản lý định mức suất tiêu hao điện, nước, hóa chất theo tấn thành phẩm',
-    },
-    batches: {
-      title: 'Lệnh sản xuất & Lô thành phẩm',
-      description: 'Điều phối lệnh gia công, phát hành lô sản xuất và kiểm soát tiến độ',
     },
   };
 
@@ -230,18 +153,6 @@ export const ProductionPage: React.FC = () => {
       icon: Clock,
       count: shiftsData?.totalCount,
     },
-    {
-      id: 'norms' as const,
-      label: 'Định mức KT - KT',
-      icon: Sliders,
-      count: normsData?.totalCount,
-    },
-    {
-      id: 'batches' as const,
-      label: 'Lệnh SX & Lô thành phẩm',
-      icon: ClipboardList,
-      count: ordersData?.totalCount,
-    },
   ];
 
   return (
@@ -249,9 +160,33 @@ export const ProductionPage: React.FC = () => {
       title={tabConfigs[activeTab].title}
       description={tabConfigs[activeTab].description}
     >
-      <div className="space-y-5">
-        {/* KPI Metrics Summary Bar */}
+      <div className="space-y-4">
+        {/* Metric Cards Filter Bar: Lọc dây chuyền, tháng, năm */}
+        <ProductionMetricFilterBar
+          lineId={metricFilters.lineId || 'all'}
+          onLineIdChange={(lineId) => setMetricFilters((prev) => ({ ...prev, lineId }))}
+          month={metricFilters.month || now.getMonth() + 1}
+          onMonthChange={(month) => setMetricFilters((prev) => ({ ...prev, month }))}
+          year={metricFilters.year || now.getFullYear()}
+          onYearChange={(year) => setMetricFilters((prev) => ({ ...prev, year }))}
+          lines={lines}
+          onReset={() =>
+            setMetricFilters({
+              lineId: 'all',
+              month: now.getMonth() + 1,
+              year: now.getFullYear(),
+            })
+          }
+        />
+
+        {/* KPI Metrics Summary Bar (4 Cards) */}
         <ProductionMetricCards metrics={metrics} isLoading={isLoadingMetrics} />
+
+        {/* Row of Consumption Norms vs Actuals with % comparison */}
+        <ProductionConsumptionNormsBar
+          norms={metrics?.consumptionNorms}
+          isLoading={isLoadingMetrics}
+        />
 
         {/* Tab Navigation */}
         <div className="flex flex-wrap items-center gap-2 border-b border-border">
@@ -289,7 +224,7 @@ export const ProductionPage: React.FC = () => {
           })}
         </div>
 
-        {/* Tab: Kế hoạch sản xuất năm */}
+        {/* Tab 1: Kế hoạch sản xuất năm */}
         {activeTab === 'annual-plan' && (
           <div className="space-y-4 animate-in fade-in duration-150">
             <ProductionAnnualPlanner
@@ -360,118 +295,11 @@ export const ProductionPage: React.FC = () => {
                 setEditingShift(shift);
                 setIsShiftFormOpen(true);
               }}
-              onDelete={(shift) => deleteShiftMutation.mutate(shift.id)}
+              onDelete={(shift) => setDeletingShift(shift)}
               onVerify={(shift) => verifyShiftMutation.mutate(shift.id)}
               canManage={canManageShifts}
               canVerify={canVerifyShifts}
-            />
-          </div>
-        )}
-
-        {/* Tab 3: Định mức KT - KT */}
-        {activeTab === 'norms' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            <ProductionNormFilterBar
-              search={normFilters.search || ''}
-              onSearchChange={(search) => setNormFilters((prev) => ({ ...prev, search, page: 1 }))}
-              resourceType={normFilters.resourceType || 'all'}
-              onResourceTypeChange={(resourceType) =>
-                setNormFilters((prev) => ({ ...prev, resourceType, page: 1 }))
-              }
-              lineId={normFilters.lineId || 'all'}
-              onLineIdChange={(lineId) => setNormFilters((prev) => ({ ...prev, lineId, page: 1 }))}
-              isActive={normFilters.isActive !== undefined ? normFilters.isActive : 'all'}
-              onIsActiveChange={(isActive) =>
-                setNormFilters((prev) => ({ ...prev, isActive, page: 1 }))
-              }
-              lines={lines}
-              onReset={() =>
-                setNormFilters({
-                  search: '',
-                  lineId: 'all',
-                  resourceType: 'all',
-                  isActive: 'all',
-                  page: 1,
-                  pageSize: 10,
-                })
-              }
-              onCreate={() => {
-                setEditingNorm(null);
-                setIsNormFormOpen(true);
-              }}
-              canManage={canManageNorms}
-            />
-
-            <ProductionNormTable
-              data={normsData?.data || []}
-              isLoading={isLoadingNorms}
-              totalCount={normsData?.totalCount || 0}
-              page={normFilters.page}
-              pageSize={normFilters.pageSize}
-              onPageChange={(page) => setNormFilters((prev) => ({ ...prev, page }))}
-              onEdit={(norm) => {
-                setEditingNorm(norm);
-                setIsNormFormOpen(true);
-              }}
-              onDelete={(norm) => setDeletingNorm(norm)}
-              canManage={canManageNorms}
-            />
-          </div>
-        )}
-
-        {/* Tab 4: Lệnh sản xuất & Lô thành phẩm */}
-        {activeTab === 'batches' && (
-          <div className="space-y-4 animate-in fade-in duration-150">
-            <ProductionOrderFilterBar
-              search={orderFilters.search || ''}
-              onSearchChange={(search) =>
-                setOrderFilters((prev) => ({ ...prev, search, page: 1 }))
-              }
-              status={orderFilters.status || 'all'}
-              onStatusChange={(status) =>
-                setOrderFilters((prev) => ({ ...prev, status, page: 1 }))
-              }
-              priority={orderFilters.priority || 'all'}
-              onPriorityChange={(priority) =>
-                setOrderFilters((prev) => ({ ...prev, priority, page: 1 }))
-              }
-              lineId={orderFilters.lineId || 'all'}
-              onLineIdChange={(lineId) =>
-                setOrderFilters((prev) => ({ ...prev, lineId, page: 1 }))
-              }
-              lines={lines}
-              onReset={() =>
-                setOrderFilters({
-                  search: '',
-                  status: 'all',
-                  priority: 'all',
-                  lineId: 'all',
-                  productId: 'all',
-                  page: 1,
-                  pageSize: 10,
-                })
-              }
-              onCreate={() => {
-                setEditingOrder(null);
-                setIsOrderFormOpen(true);
-              }}
-              canManage={canManageOrders}
-            />
-
-            <ProductionOrderTable
-              data={ordersData?.data || []}
-              isLoading={isLoadingOrders}
-              totalCount={ordersData?.totalCount || 0}
-              page={orderFilters.page}
-              pageSize={orderFilters.pageSize}
-              onPageChange={(page) => setOrderFilters((prev) => ({ ...prev, page }))}
-              onView={(order) => setViewingOrder(order)}
-              onEdit={(order) => {
-                setEditingOrder(order);
-                setIsOrderFormOpen(true);
-              }}
-              onDelete={(order) => deleteOrderMutation.mutate(order.id)}
-              canManage={canManageOrders}
+              canDelete={canDeleteShifts}
             />
           </div>
         )}
@@ -500,65 +328,23 @@ export const ProductionPage: React.FC = () => {
         onClose={() => setViewingShift(null)}
         shift={viewingShift}
         onVerify={(shift) => verifyShiftMutation.mutate(shift.id)}
+        onDelete={(shift) => setDeletingShift(shift)}
         canVerify={canVerifyShifts}
         canManage={canManageShifts}
+        canDelete={canDeleteShifts}
       />
 
-      {/* Norm Modals */}
-      <ProductionNormFormDialog
-        isOpen={isNormFormOpen}
-        onClose={() => setIsNormFormOpen(false)}
-        onSubmit={async (values) => {
-          if (editingNorm) {
-            await updateNormMutation.mutateAsync({ id: editingNorm.id, values });
-          } else {
-            await createNormMutation.mutateAsync(values);
-          }
-          setIsNormFormOpen(false);
-          setEditingNorm(null);
-        }}
-        initialData={editingNorm}
-        lines={lines}
-        isSubmitting={createNormMutation.isPending || updateNormMutation.isPending}
-      />
-
-      <ProductionNormDeleteDialog
-        isOpen={!!deletingNorm}
-        onClose={() => setDeletingNorm(null)}
+      <ProductionShiftDeleteDialog
+        isOpen={!!deletingShift}
+        onClose={() => setDeletingShift(null)}
         onConfirm={async () => {
-          if (deletingNorm) {
-            await deleteNormMutation.mutateAsync(deletingNorm.id);
-            setDeletingNorm(null);
+          if (deletingShift) {
+            await deleteShiftMutation.mutateAsync(deletingShift.id);
+            setDeletingShift(null);
           }
         }}
-        norm={deletingNorm}
-        isDeleting={deleteNormMutation.isPending}
-      />
-
-      {/* Order Modals */}
-      <ProductionOrderFormDialog
-        isOpen={isOrderFormOpen}
-        onClose={() => setIsOrderFormOpen(false)}
-        onSubmit={async (values) => {
-          if (editingOrder) {
-            await updateOrderMutation.mutateAsync({ id: editingOrder.id, values });
-          } else {
-            await createOrderMutation.mutateAsync(values);
-          }
-          setIsOrderFormOpen(false);
-          setEditingOrder(null);
-        }}
-        initialData={editingOrder}
-        lines={lines}
-        products={products}
-        isSubmitting={createOrderMutation.isPending || updateOrderMutation.isPending}
-      />
-
-      <ProductionOrderDetailModal
-        isOpen={!!viewingOrder}
-        onClose={() => setViewingOrder(null)}
-        order={viewingOrder}
-        canManage={canManageOrders}
+        shift={deletingShift}
+        isDeleting={deleteShiftMutation.isPending}
       />
     </PageContainer>
   );

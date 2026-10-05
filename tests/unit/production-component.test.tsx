@@ -7,6 +7,7 @@ import { ProductionPlanTable } from '@/features/production/components/production
 import { ProductionPlanFormDialog } from '@/features/production/components/production-plan-form-dialog';
 import { ProductionShiftTable } from '@/features/production/components/production-shift-table';
 import { ProductionShiftFormDialog } from '@/features/production/components/production-shift-form-dialog';
+import { ProductionShiftDeleteDialog } from '@/features/production/components/production-shift-delete-dialog';
 import { ProductionNormTable } from '@/features/production/components/production-norm-table';
 import { ProductionOrderTable } from '@/features/production/components/production-order-table';
 import type {
@@ -75,13 +76,66 @@ describe('Production UI Components Tests', () => {
             avgRecoveryRatePct: 83.2,
             totalDowntimeHours: 12.5,
             activeOrdersCount: 4,
+            outputProgressPct: 21,
+            plannedRecoveryRatePct: 85,
+            recoveryVariancePct: -1.8,
+            plannedOperatingHours: 656,
+            actualOperatingHours: 140,
+            plannedDowntimeHours: 20,
+            actualDowntimeHours: 12.5,
+            availabilityPct: 91.8,
+            plannedCapacityTph: 110,
+            targetQualityRatePct: 98,
+            availabilityScore: 91.8,
+            performanceScore: 95.9,
+            qualityScore: 98.0,
+            oeePct: 86.3,
           }}
         />,
       );
 
-      expect(screen.getByText('Dây chuyền hoạt động')).toBeInTheDocument();
-      expect(screen.getByText('59,400 Tấn')).toBeInTheDocument();
-      expect(screen.getByText('12,500 Tấn')).toBeInTheDocument();
+      expect(screen.getByText('Sản lượng Thực tế / KH')).toBeInTheDocument();
+      expect(screen.getByText('Tỉ lệ thu hồi')).toBeInTheDocument();
+      expect(screen.getByText('Thời gian Dừng / Chạy')).toBeInTheDocument();
+      expect(screen.getByText('Hiệu suất OEE Tổng thể')).toBeInTheDocument();
+      expect(screen.getByText(/12,500/)).toBeInTheDocument();
+      expect(screen.getByText(/59,400/)).toBeInTheDocument();
+    });
+
+    it('truthfully renders 0% and "Chưa có dữ liệu ca" when no shift data exists', () => {
+      render(
+        <ProductionMetricCards
+          isLoading={false}
+          metrics={{
+            totalMonthlyPlans: 1,
+            activeLines: 1,
+            monthlyPlannedOutputTons: 65000,
+            actualMonthlyOutputTons: 0,
+            avgCapacityTph: 0,
+            avgRecoveryRatePct: 0,
+            totalDowntimeHours: 0,
+            activeOrdersCount: 0,
+            outputProgressPct: 0,
+            plannedRecoveryRatePct: 84.19,
+            recoveryVariancePct: 0,
+            plannedOperatingHours: 1050.7,
+            actualOperatingHours: 0,
+            plannedDowntimeHours: 437.3,
+            actualDowntimeHours: 0,
+            availabilityPct: 0,
+            plannedCapacityTph: 70,
+            targetQualityRatePct: 100,
+            availabilityScore: 0,
+            performanceScore: 0,
+            qualityScore: 0,
+            oeePct: 0,
+          }}
+        />,
+      );
+
+      expect(screen.getByText('0% khả dụng')).toBeInTheDocument();
+      expect(screen.getByText('Chưa có dữ liệu ca')).toBeInTheDocument();
+      expect(screen.getAllByText('0%').length).toBeGreaterThan(0);
     });
   });
 
@@ -251,9 +305,119 @@ describe('Production UI Components Tests', () => {
         />,
       );
 
-      expect(screen.getByText('CA-20261001-LINE01-S1')).toBeInTheDocument();
-      expect(screen.getByText('745')).toBeInTheDocument();
+      expect(screen.getByText('LINE-01')).toBeInTheDocument();
+      expect(screen.getByText(/745/)).toBeInTheDocument();
       expect(screen.getByText('Đã chốt ca')).toBeInTheDocument();
+    });
+
+    it('renders delete button when canDelete is true (Admin / Trưởng phòng SX)', () => {
+      const handleDelete = vi.fn();
+      render(
+        <ProductionShiftTable
+          data={[mockShift]}
+          isLoading={false}
+          totalCount={1}
+          page={1}
+          pageSize={10}
+          onPageChange={vi.fn()}
+          onView={vi.fn()}
+          onEdit={vi.fn()}
+          onDelete={handleDelete}
+          canManage={true}
+          canVerify={true}
+          canDelete={true}
+        />,
+      );
+
+      const deleteBtn = screen.getByTitle('Xóa ca nhập liệu');
+      expect(deleteBtn).toBeInTheDocument();
+      fireEvent.click(deleteBtn);
+      expect(handleDelete).toHaveBeenCalledWith(mockShift);
+    });
+
+    it('does NOT render delete button when canDelete is false', () => {
+      render(
+        <ProductionShiftTable
+          data={[mockShift]}
+          isLoading={false}
+          totalCount={1}
+          page={1}
+          pageSize={10}
+          onPageChange={vi.fn()}
+          onView={vi.fn()}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+          canManage={true}
+          canVerify={true}
+          canDelete={false}
+        />,
+      );
+
+      expect(screen.queryByTitle('Xóa ca nhập liệu')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('ProductionShiftDeleteDialog', () => {
+    const mockShift: ProductionShift = {
+      id: 'shift-1',
+      shift_code: 'CA-20261001-LINE01-S1',
+      line_id: 'line-1',
+      line_name: 'Dây chuyền Tuyển Rửa Thô',
+      line_code: 'LINE-01',
+      shift_date: '2026-10-01',
+      shift_number: 1,
+      standard_shift_hours: 8,
+      total_downtime_hours: 0.5,
+      running_hours: 7.5,
+      raw_material_input_tons: 900,
+      product_output_tons: 745,
+      byproduct_output_tons: 110,
+      actual_capacity_tph: 99.33,
+      actual_recovery_rate_pct: 82.78,
+      operator_employee_id: null,
+      operator_name: 'Nguyễn Văn Vận Hành',
+      status: 'completed',
+      verified_by: null,
+      notes: 'Chạy tốt',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    it('renders delete confirmation details and handles confirm and close', async () => {
+      const handleClose = vi.fn();
+      const handleConfirm = vi.fn();
+
+      render(
+        <ProductionShiftDeleteDialog
+          isOpen={true}
+          onClose={handleClose}
+          onConfirm={handleConfirm}
+          shift={mockShift}
+          isDeleting={false}
+        />,
+      );
+
+      expect(screen.getByText('Xác nhận xóa ca nhập liệu')).toBeInTheDocument();
+      expect(screen.getByText('CA-20261001-LINE01-S1')).toBeInTheDocument();
+      expect(screen.getByText(/Dây chuyền Tuyển Rửa Thô/)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: /Xác nhận xóa ca/i }));
+      expect(handleConfirm).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole('button', { name: /Hủy bỏ/i }));
+      expect(handleClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns null when isOpen is false', () => {
+      const { container } = render(
+        <ProductionShiftDeleteDialog
+          isOpen={false}
+          onClose={vi.fn()}
+          onConfirm={vi.fn()}
+          shift={mockShift}
+        />,
+      );
+      expect(container.firstChild).toBeNull();
     });
   });
 

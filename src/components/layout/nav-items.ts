@@ -89,18 +89,6 @@ export const navigationItems: NavItem[] = [
         path: '/production/shifts',
         requiredPermission: ['production.shift.view', 'production.shift.read'],
       },
-      {
-        id: 'production-norms',
-        title: 'Định mức KT - KT',
-        path: '/production/norms',
-        requiredPermission: ['production.norms.view', 'master_data.read'],
-      },
-      {
-        id: 'production-batches',
-        title: 'Lô thành phẩm',
-        path: '/production/batches',
-        requiredPermission: ['production.batch.view', 'production.plan.read'],
-      },
     ],
   },
 

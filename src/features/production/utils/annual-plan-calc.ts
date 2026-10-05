@@ -106,14 +106,14 @@ export function sumMonthMaterials(
 
 /**
  * Computes the KPI indicators for a single month:
- * 1. Công suất: nguyên liệu * 0.95 / giờ vận hành (tấn/h)
- * 2. Năng suất: THÀNH PHẨM * 0.955 / giờ vận hành (tấn/h) - chỉ chia cho thành phẩm (bỏ bán TP & phụ phẩm)
- * 3. Tỷ lệ thu hồi thành phẩm: (THÀNH PHẨM * 0.955) / (nguyên liệu * 0.95) * 100%
- * 4. Tỷ lệ thu hồi phụ phẩm: (PHỤ PHẨM * 0.955) / (nguyên liệu * 0.95) * 100%
- * 5. Định mức tiêu hao điện: tiêu hao điện (kWh) / (THÀNH PHẨM * 0.955) (kWh/tấn TP)
+ * 1. Công suất: nguyên liệu / giờ vận hành (tấn/h)
+ * 2. Năng suất: THÀNH PHẨM / giờ vận hành (tấn/h) - chỉ chia cho thành phẩm (bỏ bán TP & phụ phẩm)
+ * 3. Tỷ lệ thu hồi thành phẩm: THÀNH PHẨM / nguyên liệu * 100%
+ * 4. Tỷ lệ thu hồi phụ phẩm: PHỤ PHẨM / nguyên liệu * 100%
+ * 5. Định mức tiêu hao điện: tiêu hao điện (kWh) / THÀNH PHẨM (kWh/tấn TP)
  * 6. % giờ cơ cấu đối với tổng giờ tháng:
  *    - % giờ bảo trì, % giờ nghỉ trong kế hoạch, % giờ vận hành, % giờ sự cố
- * 7. Định mức KT-KT: chỉ chia cho THÀNH PHẨM * 0.955 (không chia cho phụ phẩm, bán thành phẩm)
+ * 7. Định mức KT-KT: chỉ chia cho THÀNH PHẨM (không chia cho phụ phẩm, bán thành phẩm)
  */
 export function computeMonthKPI(params: {
   month: number;
@@ -150,28 +150,28 @@ export function computeMonthKPI(params: {
   const targetFinishedTons =
     finishedProductTons !== undefined ? finishedProductTons : totalProductTons;
 
-  // 1. Công suất: nguyên liệu * 0.95 / giờ vận hành
+  // 1. Công suất: nguyên liệu / giờ vận hành
   const capacityTph =
-    operatingHours > 0 ? (rawMaterialTons * 0.95) / operatingHours : 0;
+    operatingHours > 0 ? rawMaterialTons / operatingHours : 0;
 
-  // 2. Năng suất: THÀNH PHẨM * 0.955 / giờ vận hành (chỉ tính thành phẩm)
+  // 2. Năng suất: THÀNH PHẨM / giờ vận hành (chỉ tính thành phẩm)
   const productivityTph =
-    operatingHours > 0 ? (targetFinishedTons * 0.955) / operatingHours : 0;
+    operatingHours > 0 ? targetFinishedTons / operatingHours : 0;
 
-  // 3. Tỷ lệ thu hồi thành phẩm %: (THÀNH PHẨM * 0.955) / (nguyên liệu * 0.95) * 100%
+  // 3. Tỷ lệ thu hồi thành phẩm %: (THÀNH PHẨM / nguyên liệu) * 100%
   const recoveryPct =
-    rawMaterialTons * 0.95 > 0
-      ? ((targetFinishedTons * 0.955) / (rawMaterialTons * 0.95)) * 100
+    rawMaterialTons > 0
+      ? (targetFinishedTons / rawMaterialTons) * 100
       : 0;
 
-  // 4. Tỷ lệ thu hồi phụ phẩm %: (PHỤ PHẨM * 0.955) / (nguyên liệu * 0.95) * 100%
+  // 4. Tỷ lệ thu hồi phụ phẩm %: (PHỤ PHẨM / nguyên liệu) * 100%
   const byproductRecoveryPct =
-    rawMaterialTons * 0.95 > 0
-      ? ((byproductTons * 0.955) / (rawMaterialTons * 0.95)) * 100
+    rawMaterialTons > 0
+      ? (byproductTons / rawMaterialTons) * 100
       : 0;
 
-  // 5. Định mức tiêu hao điện: tiêu hao điện (kWh) / (THÀNH PHẨM * 0.955)
-  const effectiveProductTons = targetFinishedTons * 0.955;
+  // 5. Định mức tiêu hao điện: tiêu hao điện (kWh) / THÀNH PHẨM
+  const effectiveProductTons = targetFinishedTons;
   const electricityNorm =
     effectiveProductTons > 0 ? electricityKwh / effectiveProductTons : 0;
 
@@ -185,9 +185,9 @@ export function computeMonthKPI(params: {
   const pctShutdownHours =
     calendarHours > 0 ? (plannedShutdownHours / calendarHours) * 100 : 0;
 
-  // 7. Định mức KT-KT: chỉ chia cho (THÀNH PHẨM * 0.955)
+  // 7. Định mức KT-KT: chỉ chia cho THÀNH PHẨM
   const rawMaterialNorm =
-    effectiveProductTons > 0 ? (rawMaterialTons * 0.95) / effectiveProductTons : 0;
+    effectiveProductTons > 0 ? rawMaterialTons / effectiveProductTons : 0;
   const fuelNorm =
     effectiveProductTons > 0 ? fuelConsumption / effectiveProductTons : 0;
   const supplyNorm =
@@ -336,18 +336,14 @@ export function computeAnnualSummary(params: {
 /**
  * Computes techno-economic norm for a specific individual material/fuel/supply item.
  * CÔNG THỨC: Chỉ chia cho THÀNH PHẨM (không chia cho phụ phẩm, bán thành phẩm):
- * - Nguyên liệu: (quantity * 0.95) / (finishedProductTons * 0.955)
- * - Nhiên liệu & Vật tư & Điện: quantity / (finishedProductTons * 0.955)
+ * - Nguyên liệu, Nhiên liệu & Vật tư & Điện: quantity / finishedProductTons
  */
 export function computeItemNorm(
   quantity: number,
-  categoryGroup: 'material' | 'fuel' | 'supply',
+  _categoryGroup: 'material' | 'fuel' | 'supply',
   finishedProductTons: number,
 ): number {
-  const effectiveProductTons = (finishedProductTons || 0) * 0.955;
+  const effectiveProductTons = finishedProductTons || 0;
   if (effectiveProductTons <= 0) return 0;
-  if (categoryGroup === 'material') {
-    return ((quantity || 0) * 0.95) / effectiveProductTons;
-  }
   return (quantity || 0) / effectiveProductTons;
 }

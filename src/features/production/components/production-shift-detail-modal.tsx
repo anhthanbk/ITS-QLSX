@@ -2,23 +2,16 @@ import React, { useState } from 'react';
 import {
   X,
   Clock,
-  Gauge,
   AlertTriangle,
-  BookOpen,
   CheckCircle2,
-  Plus,
+  Trash2,
+  Award,
 } from 'lucide-react';
 import type { ProductionShift } from '../types';
 import { useProductionShiftDetail } from '../hooks/use-production-shifts';
 import { ShiftStatusBadge } from './production-status-badge';
 import { ProductionShiftDowntimeDialog } from './production-shift-downtime-dialog';
-import { ProductionShiftMeterDialog } from './production-shift-meter-dialog';
-import { ProductionShiftLogDialog } from './production-shift-log-dialog';
-import {
-  useCreateShiftDowntime,
-  useCreateShiftMeterReading,
-  useCreateShiftLog,
-} from '../hooks/use-production-shifts';
+import { useCreateShiftDowntime } from '../hooks/use-production-shifts';
 import { cn } from '@/lib/utils';
 
 interface ProductionShiftDetailModalProps {
@@ -26,29 +19,29 @@ interface ProductionShiftDetailModalProps {
   onClose: () => void;
   shift: ProductionShift | null;
   onVerify?: (shift: ProductionShift) => void;
+  onDelete?: (shift: ProductionShift) => void;
   canVerify?: boolean;
   canManage?: boolean;
+  canDelete?: boolean;
 }
 
-type ShiftDetailTab = 'summary' | 'meters' | 'downtime' | 'logs';
+type ShiftDetailTab = 'summary' | 'downtime';
 
 export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProps> = ({
   isOpen,
   onClose,
   shift,
   onVerify,
+  onDelete,
   canVerify,
   canManage,
+  canDelete = false,
 }) => {
   const [activeTab, setActiveTab] = useState<ShiftDetailTab>('summary');
   const [isDowntimeOpen, setIsDowntimeOpen] = useState(false);
-  const [isMeterOpen, setIsMeterOpen] = useState(false);
-  const [isLogOpen, setIsLogOpen] = useState(false);
 
-  const { data: detailData, isLoading } = useProductionShiftDetail(shift ? shift.id : null);
+  const { data: detailData } = useProductionShiftDetail(shift ? shift.id : null);
   const createDowntimeMutation = useCreateShiftDowntime();
-  const createMeterMutation = useCreateShiftMeterReading();
-  const createLogMutation = useCreateShiftLog();
 
   if (!isOpen || !shift) return null;
 
@@ -99,19 +92,6 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('meters')}
-              className={cn(
-                'flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors',
-                activeTab === 'meters'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Gauge className="h-3.5 w-3.5" />
-              Đồng hồ đo & Cân ({detailData?.meters.length || 0})
-            </button>
-            <button
-              type="button"
               onClick={() => setActiveTab('downtime')}
               className={cn(
                 'flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors',
@@ -123,19 +103,6 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
               <AlertTriangle className="h-3.5 w-3.5" />
               Sự cố dừng máy ({detailData?.downtimes.length || 0})
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('logs')}
-              className={cn(
-                'flex items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors',
-                activeTab === 'logs'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <BookOpen className="h-3.5 w-3.5" />
-              Nhật ký vận hành ({detailData?.logs.length || 0})
-            </button>
           </div>
 
           {/* Sub-tab Content */}
@@ -143,7 +110,7 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
             {/* 1. Summary Tab */}
             {activeTab === 'summary' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
                     <span className="text-[11px] text-muted-foreground">Giờ chạy máy thực</span>
                     <div className="mt-1 text-base font-bold text-primary">
@@ -169,26 +136,12 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                       {shift.actual_recovery_rate_pct}%
                     </div>
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-lg border border-border p-3">
-                    <span className="text-xs text-muted-foreground">Quặng cấp vào (Tấn):</span>
-                    <p className="mt-1 text-lg font-bold text-foreground">
-                      {shift.raw_material_input_tons.toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-border p-3">
-                    <span className="text-xs text-muted-foreground">Thành phẩm thu hồi (Tấn):</span>
-                    <p className="mt-1 text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                      {shift.product_output_tons.toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-border p-3">
-                    <span className="text-xs text-muted-foreground">Phụ phẩm thu hồi (Tấn):</span>
-                    <p className="mt-1 text-lg font-bold text-foreground">
-                      {shift.byproduct_output_tons.toLocaleString()}
-                    </p>
+                  <div className="rounded-lg border border-border bg-muted/20 p-3">
+                    <span className="text-[11px] text-muted-foreground">Chất lượng sản phẩm</span>
+                    <div className="mt-1 flex items-center gap-1 text-base font-bold text-emerald-600 dark:text-emerald-400">
+                      <Award className="h-4 w-4" />
+                      {shift.actual_quality_rate_pct ?? 100}%
+                    </div>
                   </div>
                 </div>
 
@@ -287,134 +240,143 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                 {/* 1.3 Phân loại dừng chuyền & khắc phục */}
                 {shift.downtime_breakdown && (
                   <div className="space-y-3 rounded-lg border border-border p-3">
-                    <h3 className="text-xs font-semibold text-foreground">
-                      Chi tiết dừng chuyền & Biện pháp khắc phục (Tổng: {shift.total_downtime_hours}h)
-                    </h3>
-                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                      {/* Bảo trì */}
-                      <div className="rounded border border-amber-200 bg-amber-50/50 p-2.5 text-xs dark:border-amber-900/50 dark:bg-amber-950/20">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-amber-900 dark:text-amber-300">
-                            Dừng bảo trì
-                          </span>
-                          <span className="font-bold text-amber-700 dark:text-amber-400">
-                            {shift.downtime_breakdown.maintenance_hours || 0} giờ
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {shift.downtime_breakdown.maintenance_note || 'Không có dừng bảo trì'}
-                        </p>
-                      </div>
-
-                      {/* Sự cố */}
-                      <div className="rounded border border-rose-200 bg-rose-50/50 p-2.5 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-rose-900 dark:text-rose-300">
-                            Dừng sự cố
-                          </span>
-                          <span className="font-bold text-rose-700 dark:text-rose-400">
-                            {shift.downtime_breakdown.incident_hours || 0} giờ
-                          </span>
-                        </div>
-                        {shift.downtime_breakdown.incident_category && (
-                          <span className="mt-1 inline-block rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-800 dark:bg-rose-900/60 dark:text-rose-200">
-                            Loại: {shift.downtime_breakdown.incident_category}
-                          </span>
-                        )}
-                        <p className="mt-1 text-[11px] text-foreground font-medium">
-                          {shift.downtime_breakdown.incident_reason || 'Không có sự cố'}
-                        </p>
-                        {shift.downtime_breakdown.incident_action && (
-                          <div className="mt-1.5 border-t border-rose-200/60 pt-1 text-[11px] text-rose-700 dark:border-rose-800/60 dark:text-rose-300">
-                            <span className="font-semibold">Khắc phục: </span>
-                            {shift.downtime_breakdown.incident_action}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Nghỉ kế hoạch */}
-                      <div className="rounded border border-blue-200 bg-blue-50/50 p-2.5 text-xs dark:border-blue-900/50 dark:bg-blue-950/20">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-blue-900 dark:text-blue-300">
-                            Nghỉ kế hoạch
-                          </span>
-                          <span className="font-bold text-blue-700 dark:text-blue-400">
-                            {shift.downtime_breakdown.planned_shutdown_hours || 0} giờ
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {shift.downtime_breakdown.planned_shutdown_reason || 'Không có nghỉ kế hoạch'}
-                        </p>
-                      </div>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-semibold text-foreground">
+                        Chi tiết dừng chuyền & Biện pháp khắc phục (Tổng: {shift.total_downtime_hours}h
+                        {shift.downtime_breakdown.events && shift.downtime_breakdown.events.length > 0
+                          ? ` • ${shift.downtime_breakdown.events.length} lần dừng`
+                          : ''}
+                        )
+                      </h3>
                     </div>
+
+                    {shift.downtime_breakdown.events && shift.downtime_breakdown.events.length > 0 ? (
+                      <div className="overflow-x-auto rounded border border-border">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-muted/40 text-muted-foreground font-semibold">
+                            <tr>
+                              <th className="px-3 py-1.5 w-10 text-center">#</th>
+                              <th className="px-3 py-1.5">Phân loại dừng</th>
+                              <th className="px-3 py-1.5 text-center">Thời gian (Từ - Đến)</th>
+                              <th className="px-3 py-1.5 text-center">Thời lượng</th>
+                              <th className="px-3 py-1.5">Lý do / Nguyên nhân</th>
+                              <th className="px-3 py-1.5">Biện pháp xử lý / Ghi chú</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {shift.downtime_breakdown.events.map((evt, idx) => {
+                              const isInc = evt.type === 'breakdown_incident';
+                              const isMaint = evt.type === 'planned_maintenance';
+                              return (
+                                <tr key={idx} className="hover:bg-muted/20">
+                                  <td className="px-3 py-2 text-center font-bold text-muted-foreground">
+                                    {idx + 1}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <span
+                                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                        isInc
+                                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                          : isMaint
+                                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                          : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                      }`}
+                                    >
+                                      {isInc
+                                        ? 'Sự cố dừng chuyền'
+                                        : isMaint
+                                        ? 'Dừng bảo trì'
+                                        : 'Nghỉ kế hoạch'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-mono font-medium text-foreground">
+                                    {evt.start_time} → {evt.end_time}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-semibold text-rose-600 dark:text-rose-400">
+                                    {evt.duration_minutes || Math.round((evt.duration_hours || 0) * 60)} phút ({evt.duration_hours || 0}h)
+                                  </td>
+                                  <td className="px-3 py-2 text-foreground font-medium">
+                                    {evt.incident_category && (
+                                      <span className="mr-1 text-[10px] text-muted-foreground font-normal">
+                                        [{evt.incident_category}]
+                                      </span>
+                                    )}
+                                    {evt.reason || '---'}
+                                  </td>
+                                  <td className="px-3 py-2 text-muted-foreground">
+                                    {evt.action_taken || '---'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                        {/* Bảo trì */}
+                        <div className="rounded border border-amber-200 bg-amber-50/50 p-2.5 text-xs dark:border-amber-900/50 dark:bg-amber-950/20">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-amber-900 dark:text-amber-300">
+                              Dừng bảo trì
+                            </span>
+                            <span className="font-bold text-amber-700 dark:text-amber-400">
+                              {shift.downtime_breakdown.maintenance_hours || 0} giờ
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            {shift.downtime_breakdown.maintenance_note || 'Không có dừng bảo trì'}
+                          </p>
+                        </div>
+
+                        {/* Sự cố */}
+                        <div className="rounded border border-rose-200 bg-rose-50/50 p-2.5 text-xs dark:border-rose-900/50 dark:bg-rose-950/20">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-rose-900 dark:text-rose-300">
+                              Dừng sự cố
+                            </span>
+                            <span className="font-bold text-rose-700 dark:text-rose-400">
+                              {shift.downtime_breakdown.incident_hours || 0} giờ
+                            </span>
+                          </div>
+                          {shift.downtime_breakdown.incident_category && (
+                            <span className="mt-1 inline-block rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-800 dark:bg-rose-900/60 dark:text-rose-200">
+                              Loại: {shift.downtime_breakdown.incident_category}
+                            </span>
+                          )}
+                          <p className="mt-1 text-[11px] text-foreground font-medium">
+                            {shift.downtime_breakdown.incident_reason || 'Không có sự cố'}
+                          </p>
+                          {shift.downtime_breakdown.incident_action && (
+                            <div className="mt-1.5 border-t border-rose-200/60 pt-1 text-[11px] text-rose-700 dark:border-rose-800/60 dark:text-rose-300">
+                              <span className="font-semibold">Khắc phục: </span>
+                              {shift.downtime_breakdown.incident_action}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Nghỉ kế hoạch */}
+                        <div className="rounded border border-blue-200 bg-blue-50/50 p-2.5 text-xs dark:border-blue-900/50 dark:bg-blue-950/20">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-blue-900 dark:text-blue-300">
+                              Nghỉ kế hoạch
+                            </span>
+                            <span className="font-bold text-blue-700 dark:text-blue-400">
+                              {shift.downtime_breakdown.planned_shutdown_hours || 0} giờ
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            {shift.downtime_breakdown.planned_shutdown_reason || 'Không có nghỉ kế hoạch'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )}
 
-            {/* 2. Meters Tab */}
-            {activeTab === 'meters' && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    Chỉ số điện năng, cân cấp quặng và vật tư tiêu hao trong ca
-                  </p>
-                  {canManage && shift.status !== 'verified' && (
-                    <button
-                      type="button"
-                      onClick={() => setIsMeterOpen(true)}
-                      className="inline-flex items-center gap-1 rounded bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Ghi chỉ số đo
-                    </button>
-                  )}
-                </div>
-
-                {isLoading ? (
-                  <div className="py-6 text-center text-xs text-muted-foreground">
-                    Đang tải chỉ số đo...
-                  </div>
-                ) : !detailData?.meters || detailData.meters.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
-                    Chưa có số đo cân/điện nào được ghi nhận cho ca này.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-muted/40 text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2">Mã đồng hồ</th>
-                          <th className="px-3 py-2">Tên thiết bị đo</th>
-                          <th className="px-3 py-2 text-right">Chỉ số đầu</th>
-                          <th className="px-3 py-2 text-right">Chỉ số cuối</th>
-                          <th className="px-3 py-2 text-right">Tiêu thụ</th>
-                          <th className="px-3 py-2">Ghi chú</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {detailData.meters.map((m) => (
-                          <tr key={m.id}>
-                            <td className="px-3 py-2 font-mono font-medium text-primary">
-                              {m.meter_code}
-                            </td>
-                            <td className="px-3 py-2">{m.meter_name}</td>
-                            <td className="px-3 py-2 text-right">{m.start_reading}</td>
-                            <td className="px-3 py-2 text-right">{m.end_reading}</td>
-                            <td className="px-3 py-2 text-right font-bold text-foreground">
-                              {m.consumed_quantity.toLocaleString()} {m.unit_of_measure}
-                            </td>
-                            <td className="px-3 py-2 text-muted-foreground">{m.notes || '---'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 3. Downtime Tab */}
+            {/* 2. Downtime Tab */}
             {activeTab === 'downtime' && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -433,11 +395,7 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                   )}
                 </div>
 
-                {isLoading ? (
-                  <div className="py-6 text-center text-xs text-muted-foreground">
-                    Đang tải sự kiện dừng máy...
-                  </div>
-                ) : !detailData?.downtimes || detailData.downtimes.length === 0 ? (
+                {!detailData?.downtimes || detailData.downtimes.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
                     Ca vận hành liên tục, không ghi nhận sự cố dừng chuyền.
                   </div>
@@ -471,58 +429,6 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                 )}
               </div>
             )}
-
-            {/* 4. Logs Tab */}
-            {activeTab === 'logs' && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    Nhật ký điều hành công nghệ và chỉ đạo vận hành trong ca
-                  </p>
-                  {canManage && shift.status !== 'verified' && (
-                    <button
-                      type="button"
-                      onClick={() => setIsLogOpen(true)}
-                      className="inline-flex items-center gap-1 rounded bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Thêm mục nhật ký
-                    </button>
-                  )}
-                </div>
-
-                {isLoading ? (
-                  <div className="py-6 text-center text-xs text-muted-foreground">
-                    Đang tải nhật ký ca...
-                  </div>
-                ) : !detailData?.logs || detailData.logs.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">
-                    Chưa có mục nhật ký nào được ghi nhận cho ca này.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {detailData.logs.map((log) => (
-                      <div
-                        key={log.id}
-                        className="rounded-lg border border-border bg-card p-3 shadow-sm text-xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-primary">{log.content}</span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {new Date(log.log_time).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        {log.changed_by_name && (
-                          <p className="mt-1 text-[11px] text-muted-foreground">
-                            Người ghi nhận: {log.changed_by_name}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Footer */}
@@ -550,6 +456,20 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                   Nghiệm thu ca
                 </button>
               )}
+              {canDelete && onDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onDelete(shift);
+                    onClose();
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/50"
+                  title="Xóa ca nhập liệu"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Xóa ca
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}
@@ -573,28 +493,6 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
         shiftId={shift.id}
         lineId={shift.line_id}
         isSubmitting={createDowntimeMutation.isPending}
-      />
-
-      <ProductionShiftMeterDialog
-        isOpen={isMeterOpen}
-        onClose={() => setIsMeterOpen(false)}
-        onSubmit={async (values) => {
-          await createMeterMutation.mutateAsync(values);
-          setIsMeterOpen(false);
-        }}
-        shiftId={shift.id}
-        isSubmitting={createMeterMutation.isPending}
-      />
-
-      <ProductionShiftLogDialog
-        isOpen={isLogOpen}
-        onClose={() => setIsLogOpen(false)}
-        onSubmit={async (values) => {
-          await createLogMutation.mutateAsync(values);
-          setIsLogOpen(false);
-        }}
-        shiftId={shift.id}
-        isSubmitting={createLogMutation.isPending}
       />
     </>
   );

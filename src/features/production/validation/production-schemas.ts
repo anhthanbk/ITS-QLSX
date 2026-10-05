@@ -130,6 +130,20 @@ export const shiftProductOutputSchema = z.object({
 
 export type ShiftProductOutputFormValues = z.infer<typeof shiftProductOutputSchema>;
 
+export const shiftDowntimeEventSchema = z.object({
+  id: z.string().optional(),
+  type: z.enum(['breakdown_incident', 'planned_maintenance', 'scheduled_shutdown']),
+  start_time: z.string().default('08:00'),
+  end_time: z.string().default('08:30'),
+  duration_minutes: z.number().min(0).default(30),
+  duration_hours: z.number().min(0).default(0.5),
+  incident_category: z.string().optional().nullable(),
+  reason: z.string().optional().nullable(),
+  action_taken: z.string().optional().nullable(),
+});
+
+export type ShiftDowntimeEventFormValues = z.infer<typeof shiftDowntimeEventSchema>;
+
 export const shiftDowntimeBreakdownSchema = z.object({
   maintenance_hours: z.number().min(0, 'Giờ bảo trì không được âm').default(0),
   maintenance_note: z.string().optional().nullable(),
@@ -140,6 +154,7 @@ export const shiftDowntimeBreakdownSchema = z.object({
   planned_shutdown_hours: z.number().min(0, 'Giờ nghỉ kế hoạch không được âm').default(0),
   planned_shutdown_reason: z.string().optional().nullable(),
   total_downtime_hours: z.number().min(0).default(0),
+  events: z.array(shiftDowntimeEventSchema).optional().default([]),
 });
 
 export type ShiftDowntimeBreakdownFormValues = z.infer<typeof shiftDowntimeBreakdownSchema>;
@@ -174,6 +189,11 @@ export const productionShiftSchema = z.object({
     .default(0),
   actual_capacity_tph: z.number().optional().nullable(),
   actual_recovery_rate_pct: z.number().optional().nullable(),
+  actual_quality_rate_pct: z
+    .number({ invalid_type_error: 'Chất lượng sản phẩm phải là số' })
+    .min(0, 'Tối thiểu 0%')
+    .max(100, 'Tối đa 100%')
+    .default(100.0),
   operator_employee_id: z.string().uuid().optional().nullable(),
   status: z.enum(['in_progress', 'completed', 'verified']).default('completed'),
   notes: z.string().optional().nullable(),
@@ -209,52 +229,6 @@ export const shiftDowntimeSchema = z.object({
 });
 
 export type ShiftDowntimeFormValues = z.infer<typeof shiftDowntimeSchema>;
-
-// 5. Shift Meter Schema
-export const shiftMeterSchema = z.object({
-  shift_id: z.string().uuid('Vui lòng chọn ca sản xuất'),
-  meter_code: z.string().min(2, 'Mã đồng hồ phải từ 2 ký tự').trim(),
-  meter_name: z.string().min(2, 'Tên đồng hồ phải từ 2 ký tự').trim(),
-  meter_type: z.enum([
-    'input_scale',
-    'output_scale',
-    'electric_meter',
-    'diesel_meter',
-    'coal_scale',
-    'water_meter',
-    'chemical_meter',
-  ]),
-  start_reading: z
-    .number({ invalid_type_error: 'Chỉ số đầu phải là số' })
-    .min(0, 'Chỉ số không âm'),
-  end_reading: z
-    .number({ invalid_type_error: 'Chỉ số cuối phải là số' })
-    .min(0, 'Chỉ số không âm'),
-  multiplier: z.number().positive('Hệ số nhân phải lớn hơn 0').default(1.0),
-  consumed_quantity: z.number().min(0, 'Lượng tiêu thụ không âm'),
-  unit_of_measure: z.string().min(1, 'Đơn vị tính không được trống'),
-  notes: z.string().optional().nullable(),
-});
-
-export type ShiftMeterFormValues = z.infer<typeof shiftMeterSchema>;
-
-// 6. Shift Log Schema
-export const shiftLogSchema = z.object({
-  shift_id: z.string().uuid('Vui lòng chọn ca sản xuất'),
-  log_time: z.string().min(1, 'Vui lòng chọn thời gian ghi nhận'),
-  change_type: z.enum([
-    'process_parameter',
-    'equipment_adjustment',
-    'feed_ore_variation',
-    'safety_notice',
-    'management_directive',
-    'other',
-  ]),
-  content: z.string().min(3, 'Nội dung nhật ký phải từ 3 ký tự').trim(),
-  changed_by_employee_id: z.string().uuid().optional().nullable(),
-});
-
-export type ShiftLogFormValues = z.infer<typeof shiftLogSchema>;
 
 // 7. Production Order Schema
 export const productionOrderSchema = z.object({

@@ -131,16 +131,29 @@ export interface ShiftProductOutput {
   quantity_tons: number;
 }
 
+export interface ShiftDowntimeEvent {
+  id?: string;
+  type: 'breakdown_incident' | 'planned_maintenance' | 'scheduled_shutdown';
+  start_time: string; // "HH:mm" e.g. "08:00"
+  end_time: string;   // "HH:mm" e.g. "08:45"
+  duration_minutes?: number;
+  duration_hours: number;
+  incident_category?: string | null;
+  reason?: string | null;
+  action_taken?: string | null;
+}
+
 export interface ShiftDowntimeBreakdown {
   maintenance_hours: number;
-  maintenance_note?: string;
+  maintenance_note?: string | null;
   incident_hours: number;
-  incident_category?: string;
-  incident_reason?: string;
-  incident_action?: string;
+  incident_category?: string | null;
+  incident_reason?: string | null;
+  incident_action?: string | null;
   planned_shutdown_hours: number;
-  planned_shutdown_reason?: string;
+  planned_shutdown_reason?: string | null;
   total_downtime_hours: number;
+  events?: ShiftDowntimeEvent[];
 }
 
 export interface ProductionShift {
@@ -159,6 +172,7 @@ export interface ProductionShift {
   byproduct_output_tons: number;
   actual_capacity_tph?: number;
   actual_recovery_rate_pct?: number;
+  actual_quality_rate_pct?: number;
   operator_employee_id: string | null;
   operator_name?: string;
   status: ShiftStatus;
@@ -169,29 +183,6 @@ export interface ProductionShift {
   downtime_breakdown?: ShiftDowntimeBreakdown;
   created_at: string;
   updated_at: string;
-}
-
-export type MeterType =
-  | 'input_scale'
-  | 'output_scale'
-  | 'electric_meter'
-  | 'diesel_meter'
-  | 'coal_scale'
-  | 'water_meter'
-  | 'chemical_meter';
-
-export interface ShiftMeterReading {
-  id: string;
-  shift_id: string;
-  meter_code: string;
-  meter_name: string;
-  meter_type: MeterType;
-  start_reading: number;
-  end_reading: number;
-  multiplier: number;
-  consumed_quantity: number;
-  unit_of_measure: string;
-  notes: string | null;
 }
 
 export type DowntimeCategory =
@@ -219,25 +210,6 @@ export interface ShiftDowntime {
   status: DowntimeStatus;
   reported_by_employee_id: string | null;
   reported_by_name?: string;
-  created_at: string;
-}
-
-export type ShiftLogChangeType =
-  | 'process_parameter'
-  | 'equipment_adjustment'
-  | 'feed_ore_variation'
-  | 'safety_notice'
-  | 'management_directive'
-  | 'other';
-
-export interface ShiftLog {
-  id: string;
-  shift_id: string;
-  log_time: string;
-  change_type: ShiftLogChangeType;
-  content: string;
-  changed_by_employee_id: string | null;
-  changed_by_name?: string;
   created_at: string;
 }
 
@@ -369,15 +341,55 @@ export interface PaginatedResult<T> {
   totalPages: number;
 }
 
+export interface ProductionMetricsFilterParams {
+  lineId?: string;
+  year?: number;
+  month?: number;
+}
+
+export interface ConsumptionNormMetric {
+  key: string;
+  resourceName: string;
+  categoryGroup: 'material' | 'fuel' | 'supply';
+  unit: string;
+  plannedNorm: number;
+  actualNorm: number;
+  variancePct: number;
+  plannedTotal?: number;
+  actualTotal?: number;
+  status: 'better' | 'worse' | 'neutral' | 'no_data';
+}
+
 export interface ProductionMetrics {
   totalMonthlyPlans: number;
   activeLines: number;
+  // 1. Output Actual vs Planned
   monthlyPlannedOutputTons: number;
   actualMonthlyOutputTons: number;
-  avgCapacityTph: number;
+  outputProgressPct: number;
+  // 2. Techno-Economic Norms Actual vs Planned
+  plannedRecoveryRatePct: number;
   avgRecoveryRatePct: number;
+  recoveryVariancePct: number;
+  // 3. Operating & Downtime Actual vs Planned
+  plannedOperatingHours: number;
+  actualOperatingHours: number;
+  plannedDowntimeHours: number;
+  actualDowntimeHours: number;
+  availabilityPct: number;
+  // 4. OEE & Breakdown
+  plannedCapacityTph: number;
+  avgCapacityTph: number;
+  targetQualityRatePct: number;
+  availabilityScore: number;
+  performanceScore: number;
+  qualityScore: number;
+  oeePct: number;
+  // Legacy compatibility fields
   totalDowntimeHours: number;
   activeOrdersCount: number;
+  // Consumption norms vs actuals comparison row
+  consumptionNorms?: ConsumptionNormMetric[];
 }
 
 // ==========================================
@@ -420,15 +432,15 @@ export interface AnnualPlanTimeMonth {
 
 export interface AnnualPlanMonthKPI {
   month: number;
-  // 1. Công suất: nguyên liệu * 0.95 / giờ vận hành (tấn/giờ)
+  // 1. Công suất: nguyên liệu / giờ vận hành (tấn/giờ)
   capacityTph: number;
-  // 2. Năng suất: tổng THÀNH PHẨM * 0.955 / giờ vận hành (tấn/giờ) - chỉ tính thành phẩm
+  // 2. Năng suất: tổng THÀNH PHẨM / giờ vận hành (tấn/giờ) - chỉ tính thành phẩm
   productivityTph: number;
-  // 3. Tỷ lệ thu hồi thành phẩm từ nguyên liệu: (tổng thành phẩm * 0.955) / (nguyên liệu * 0.95) * 100%
+  // 3. Tỷ lệ thu hồi thành phẩm từ nguyên liệu: tổng thành phẩm / nguyên liệu * 100%
   recoveryPct: number;
-  // 4. Tỷ lệ thu hồi phụ phẩm từ nguyên liệu: (tổng phụ phẩm * 0.955) / (nguyên liệu * 0.95) * 100%
+  // 4. Tỷ lệ thu hồi phụ phẩm từ nguyên liệu: tổng phụ phẩm / nguyên liệu * 100%
   byproductRecoveryPct: number;
-  // 5. Định mức tiêu hao điện: tiêu hao điện (kWh) / (tổng thành phẩm * 0.955)
+  // 5. Định mức tiêu hao điện: tiêu hao điện (kWh) / tổng thành phẩm
   electricityNorm: number;
   recoveryFormula?: number; // Tùy chọn cũ
   // 6. % giờ đối với tổng giờ tháng
@@ -436,10 +448,10 @@ export interface AnnualPlanMonthKPI {
   pctMaintenanceHours: number;
   pctIncidentHours: number;
   pctShutdownHours: number;
-  // 7. Định mức KT-KT: tính theo (tổng THÀNH PHẨM * 0.955)
-  rawMaterialNorm: number; // nguyên liệu * 0.95 / (thành phẩm * 0.955)
-  fuelNorm: number;        // tiêu hao nhiên liệu / (thành phẩm * 0.955)
-  supplyNorm: number;      // tiêu hao vật tư / (thành phẩm * 0.955)
+  // 7. Định mức KT-KT: tính theo tổng THÀNH PHẨM
+  rawMaterialNorm: number; // nguyên liệu / thành phẩm
+  fuelNorm: number;        // tiêu hao nhiên liệu / thành phẩm
+  supplyNorm: number;      // tiêu hao vật tư / thành phẩm
 }
 
 export function normalizeProductType(type?: string | null): PlanProductClassification {

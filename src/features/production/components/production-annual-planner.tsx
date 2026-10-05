@@ -937,14 +937,14 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
       const avgInc = timeSummary.avgIncidentHours[m] ?? 0;
       const avgShut = timeSummary.avgShutdownHours[m] ?? 0;
 
-      const capacityTph = avgOpHours > 0 ? (rawMat * 0.95) / avgOpHours : 0;
-      const productivityTph = avgOpHours > 0 ? (finishedProd * 0.955) / avgOpHours : 0;
+      const capacityTph = avgOpHours > 0 ? rawMat / avgOpHours : 0;
+      const productivityTph = avgOpHours > 0 ? finishedProd / avgOpHours : 0;
       const recoveryPct =
-        rawMat * 0.95 > 0 ? ((finishedProd * 0.955) / (rawMat * 0.95)) * 100 : 0;
+        rawMat > 0 ? (finishedProd / rawMat) * 100 : 0;
       const byproductRecoveryPct =
-        rawMat * 0.95 > 0 ? ((byproductProd * 0.955) / (rawMat * 0.95)) * 100 : 0;
+        rawMat > 0 ? (byproductProd / rawMat) * 100 : 0;
       const electricityNorm =
-        finishedProd * 0.955 > 0 ? elecKwh / (finishedProd * 0.955) : 0;
+        finishedProd > 0 ? elecKwh / finishedProd : 0;
 
       const pctOperatingHours = calHours > 0 ? (avgOpHours / calHours) * 100 : 0;
       const pctMaintenanceHours = calHours > 0 ? (avgMaint / calHours) * 100 : 0;
@@ -968,20 +968,20 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
     // Annual Factory Overall KPIs
     const annualAvgOpHours = timeSummary.annualAvgOperatingHours;
     const annualCapacityTph =
-      annualAvgOpHours > 0 ? (factoryAnnualRawMaterial * 0.95) / annualAvgOpHours : 0;
+      annualAvgOpHours > 0 ? factoryAnnualRawMaterial / annualAvgOpHours : 0;
     const annualProductivityTph =
-      annualAvgOpHours > 0 ? (factoryAnnualFinishedTotal * 0.955) / annualAvgOpHours : 0;
+      annualAvgOpHours > 0 ? factoryAnnualFinishedTotal / annualAvgOpHours : 0;
     const annualRecoveryPct =
-      factoryAnnualRawMaterial * 0.95 > 0
-        ? ((factoryAnnualFinishedTotal * 0.955) / (factoryAnnualRawMaterial * 0.95)) * 100
+      factoryAnnualRawMaterial > 0
+        ? (factoryAnnualFinishedTotal / factoryAnnualRawMaterial) * 100
         : 0;
     const annualByproductRecoveryPct =
-      factoryAnnualRawMaterial * 0.95 > 0
-        ? ((factoryAnnualByproductTotal * 0.955) / (factoryAnnualRawMaterial * 0.95)) * 100
+      factoryAnnualRawMaterial > 0
+        ? (factoryAnnualByproductTotal / factoryAnnualRawMaterial) * 100
         : 0;
     const annualElectricityNorm =
-      factoryAnnualFinishedTotal * 0.955 > 0
-        ? factoryAnnualElectricity / (factoryAnnualFinishedTotal * 0.955)
+      factoryAnnualFinishedTotal > 0
+        ? factoryAnnualElectricity / factoryAnnualFinishedTotal
         : 0;
     const annualPctOperatingHours =
       timeSummary.totalCalendarHours > 0
@@ -1063,17 +1063,21 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
         ? annualSummary.totalOperatingHours
         : planOperatingHours;
 
-      // 5. Thu hồi thành phẩm BQ (%): (TP * 0.955) / (Nguyên liệu * 0.95) * 100%
+      // 5. Thu hồi thành phẩm BQ (%): TP / Nguyên liệu * 100%
       const avgRecoveryPct =
-        totalInputTons * 0.95 > 0 ? ((totalOutputTons * 0.955) / (totalInputTons * 0.95)) * 100 : 0;
+        totalInputTons > 0 ? (totalOutputTons / totalInputTons) * 100 : 0;
 
-      // 6. Thu hồi phụ phẩm BQ (%): (Phụ phẩm * 0.955) / (Nguyên liệu * 0.95) * 100%
+      // 6. Thu hồi phụ phẩm BQ (%): Phụ phẩm / Nguyên liệu * 100%
       const byproductRecoveryPct =
-        totalInputTons * 0.95 > 0 ? ((totalByproductTons * 0.955) / (totalInputTons * 0.95)) * 100 : 0;
+        totalInputTons > 0 ? (totalByproductTons / totalInputTons) * 100 : 0;
 
-      // 7. Năng suất BQ (t/h): (TP * 0.955) / Giờ vận hành
+      // 7. Năng suất BQ (t/h): TP / Giờ vận hành
       const avgProductivityTph =
-        totalOperatingHours > 0 ? (totalOutputTons * 0.955) / totalOperatingHours : 0;
+        totalOperatingHours > 0 ? totalOutputTons / totalOperatingHours : 0;
+
+      // 8. Công suất thực tế BQ (t/h): Nguyên liệu / Giờ vận hành
+      const avgCapacityTph =
+        totalOperatingHours > 0 ? totalInputTons / totalOperatingHours : 0;
 
       const status: PlanStatus | 'not_created' = plansForLine.some((p) => p.status === 'approved')
         ? 'approved'
@@ -1092,6 +1096,7 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
         avgRecoveryPct,
         byproductRecoveryPct,
         avgProductivityTph,
+        avgCapacityTph,
         status,
       };
     });
@@ -2175,19 +2180,19 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                       <ul className="space-y-1.5 text-muted-foreground text-[11px]">
                         <li>
                           <strong className="text-foreground">Công suất (tấn/h):</strong>{' '}
-                          <code>(Tổng nguyên liệu * 0.95) / Giờ vận hành BQ</code>
+                          <code>Tổng nguyên liệu / Giờ vận hành BQ</code>
                         </li>
                         <li>
                           <strong className="text-foreground">Năng suất (tấn/h):</strong>{' '}
-                          <code>(Tổng thành phẩm * 0.955) / Giờ vận hành BQ</code>
+                          <code>Tổng thành phẩm / Giờ vận hành BQ</code>
                         </li>
                         <li>
                           <strong className="text-foreground">Tỷ lệ thu hồi TP (%):</strong>{' '}
-                          <code>(Tổng thành phẩm * 0.955) / (Tổng nguyên liệu * 0.95) * 100%</code>
+                          <code>(Tổng thành phẩm / Tổng nguyên liệu) * 100%</code>
                         </li>
                         <li>
                           <strong className="text-foreground">Tỷ lệ thu hồi phụ phẩm (%):</strong>{' '}
-                          <code>(Tổng phụ phẩm * 0.955) / (Tổng nguyên liệu * 0.95) * 100%</code>
+                          <code>(Tổng phụ phẩm / Tổng nguyên liệu) * 100%</code>
                         </li>
                       </ul>
                     </div>
@@ -2219,15 +2224,15 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                       <ul className="space-y-1.5 text-muted-foreground text-[11px]">
                         <li>
                           <strong className="text-foreground">Định mức tiêu hao điện:</strong>{' '}
-                          <code>Tổng tiêu hao điện (kWh) / (Tổng TP toàn nhà máy * 0.955)</code>
+                          <code>Tổng tiêu hao điện (kWh) / Tổng TP toàn nhà máy</code>
                         </li>
                         <li>
                           <strong className="text-foreground">Định mức nguyên liệu:</strong>{' '}
-                          <code>(Tổng tiêu hao * 0.95) / (Tổng TP toàn nhà máy * 0.955)</code>
+                          <code>Tổng tiêu hao / Tổng TP toàn nhà máy</code>
                         </li>
                         <li>
                           <strong className="text-foreground">Định mức nhiên liệu & vật tư:</strong>{' '}
-                          <code>Tổng tiêu hao / (Tổng TP toàn nhà máy * 0.955)</code>
+                          <code>Tổng tiêu hao / Tổng TP toàn nhà máy</code>
                         </li>
                       </ul>
                     </div>
@@ -2247,7 +2252,9 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                     <thead>
                       <tr className="border-b border-border bg-muted/20 text-muted-foreground">
                         <th className="px-3 py-2.5 font-semibold">Dây chuyền</th>
-                        <th className="px-2 py-2 font-semibold text-center">Công suất TK (t/h)</th>
+                        <th className="px-2 py-2 font-semibold text-center" title="Công suất thực tế bình quân (tấn nguyên liệu / giờ vận hành)">
+                          Công suất TT (t/h)
+                        </th>
                         <th className="px-2 py-2 font-semibold text-right">Sản lượng TP (tấn)</th>
                         <th className="px-2 py-2 font-semibold text-right">Nguyên liệu KH (tấn)</th>
                         <th className="px-2 py-2 font-semibold text-right">Giờ vận hành (h)</th>
@@ -2267,8 +2274,8 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                             <div>{stat.line.name}</div>
                             <div className="text-[10px] text-muted-foreground">{stat.line.code}</div>
                           </td>
-                          <td className="px-2 py-2 text-center text-foreground font-medium">
-                            {stat.line.designed_capacity_tph}
+                          <td className="px-2 py-2 text-center text-foreground font-semibold">
+                            {formatNum(stat.avgCapacityTph, 2)}
                           </td>
                           <td className="px-2 py-2 text-right font-bold text-primary">
                             {formatNum(stat.totalOutputTons)}

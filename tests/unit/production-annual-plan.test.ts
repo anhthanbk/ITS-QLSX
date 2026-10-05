@@ -76,16 +76,16 @@ describe('Annual Production Plan Calculation Formulas & Utilities', () => {
         totalProductTons: 55000,
       });
 
-      // 1. Công suất: nguyên liệu * 0.95 / giờ vận hành
-      const expectedCapacity = (70000 * 0.95) / 670;
+      // 1. Công suất: nguyên liệu / giờ vận hành
+      const expectedCapacity = 70000 / 670;
       expect(kpi.capacityTph).toBeCloseTo(expectedCapacity, 4);
 
-      // 2. Năng suất: tổng sản phẩm * 0.955 / giờ vận hành
-      const expectedProductivity = (55000 * 0.955) / 670;
+      // 2. Năng suất: tổng sản phẩm / giờ vận hành
+      const expectedProductivity = 55000 / 670;
       expect(kpi.productivityTph).toBeCloseTo(expectedProductivity, 4);
 
-      // 3. Tỷ lệ thu hồi thành phẩm %: (tổng sản phẩm * 0.955) / (nguyên liệu * 0.95) * 100%
-      const expectedRecoveryPct = ((55000 * 0.955) / (70000 * 0.95)) * 100;
+      // 3. Tỷ lệ thu hồi thành phẩm %: (tổng sản phẩm / nguyên liệu) * 100%
+      const expectedRecoveryPct = (55000 / 70000) * 100;
       expect(kpi.recoveryPct).toBeCloseTo(expectedRecoveryPct, 4);
 
       // 4. % Giờ
@@ -95,12 +95,12 @@ describe('Annual Production Plan Calculation Formulas & Utilities', () => {
       expect(kpi.pctShutdownHours).toBeCloseTo((14 / 720) * 100, 2);
 
       // 5. Định mức KT-KT:
-      // Tiêu hao nguyên liệu: tiêu hao nguyên liệu * 0.95 / (tổng sản phẩm * 0.955)
-      const effectiveProduct = 55000 * 0.955;
-      expect(kpi.rawMaterialNorm).toBeCloseTo((70000 * 0.95) / effectiveProduct, 4);
-      // Tiêu hao nhiên liệu: tiêu hao nhiên liệu / (tổng sản phẩm * 0.955)
+      // Tiêu hao nguyên liệu: tiêu hao nguyên liệu / tổng sản phẩm
+      const effectiveProduct = 55000;
+      expect(kpi.rawMaterialNorm).toBeCloseTo(70000 / effectiveProduct, 4);
+      // Tiêu hao nhiên liệu: tiêu hao nhiên liệu / tổng sản phẩm
       expect(kpi.fuelNorm).toBeCloseTo(15000 / effectiveProduct, 4);
-      // Tiêu hao vật tư: tiêu hao vật tư / (tổng sản phẩm * 0.955)
+      // Tiêu hao vật tư: tiêu hao vật tư / tổng sản phẩm
       expect(kpi.supplyNorm).toBeCloseTo(2500 / effectiveProduct, 4);
     });
 
@@ -182,23 +182,23 @@ describe('Annual Production Plan Calculation Formulas & Utilities', () => {
   });
 
   describe('Individual Material Item Norms', () => {
-    it('calculates correct norm for raw materials: (quantity * 0.95) / (totalProduct * 0.955)', () => {
+    it('calculates correct norm for raw materials: quantity / totalProduct', () => {
       const quantity = 5000;
       const totalProductTons = 4000;
       const norm = computeItemNorm(quantity, 'material', totalProductTons);
-      const expected = (5000 * 0.95) / (4000 * 0.955);
+      const expected = 5000 / 4000;
       expect(norm).toBeCloseTo(expected, 4);
     });
 
-    it('calculates correct norm for fuel and supplies: quantity / (totalProduct * 0.955)', () => {
+    it('calculates correct norm for fuel and supplies: quantity / totalProduct', () => {
       const fuelQty = 1200;
       const totalProductTons = 4000;
       const fuelNorm = computeItemNorm(fuelQty, 'fuel', totalProductTons);
-      expect(fuelNorm).toBeCloseTo(1200 / (4000 * 0.955), 4);
+      expect(fuelNorm).toBeCloseTo(1200 / 4000, 4);
 
       const supplyQty = 350;
       const supplyNorm = computeItemNorm(supplyQty, 'supply', totalProductTons);
-      expect(supplyNorm).toBeCloseTo(350 / (4000 * 0.955), 4);
+      expect(supplyNorm).toBeCloseTo(350 / 4000, 4);
     });
 
     it('returns 0 when total product output is zero', () => {
@@ -266,21 +266,21 @@ describe('Annual Production Plan Calculation Formulas & Utilities', () => {
         finishedProductTons: 3000, // Explicitly pass finished goods
       });
 
-      // Năng suất: chỉ chia cho 3000 * 0.955
-      const expectedProductivity = (3000 * 0.955) / 500;
+      // Năng suất: chỉ chia cho 3000
+      const expectedProductivity = 3000 / 500;
       expect(kpi.productivityTph).toBeCloseTo(expectedProductivity, 4);
 
-      // Tỷ lệ thu hồi thành phẩm %: (3000 * 0.955) / (4000 * 0.95) * 100%
-      const expectedRecoveryPct = ((3000 * 0.955) / (4000 * 0.95)) * 100;
+      // Tỷ lệ thu hồi thành phẩm %: (3000 / 4000) * 100%
+      const expectedRecoveryPct = (3000 / 4000) * 100;
       expect(kpi.recoveryPct).toBeCloseTo(expectedRecoveryPct, 4);
 
-      // Định mức nguyên liệu: chỉ chia cho 3000 * 0.955 (không chia cho 5000 * 0.955)
-      const expectedRawMaterialNorm = (4000 * 0.95) / (3000 * 0.955);
+      // Định mức nguyên liệu: chỉ chia cho 3000 (không chia cho 5000)
+      const expectedRawMaterialNorm = 4000 / 3000;
       expect(kpi.rawMaterialNorm).toBeCloseTo(expectedRawMaterialNorm, 4);
 
       // computeItemNorm function also divides only by finishedProductTons
       const fuelNorm = computeItemNorm(2000, 'fuel', 3000);
-      expect(fuelNorm).toBeCloseTo(2000 / (3000 * 0.955), 4);
+      expect(fuelNorm).toBeCloseTo(2000 / 3000, 4);
     });
 
     it('computes byproduct recovery rate and electricity norm accurately', () => {
@@ -300,12 +300,12 @@ describe('Annual Production Plan Calculation Formulas & Utilities', () => {
         electricityKwh: 35000,
       });
 
-      // Tỷ lệ thu hồi phụ phẩm % = (400 * 0.955) / (5000 * 0.95) * 100%
-      const expectedByproductRecovery = ((400 * 0.955) / (5000 * 0.95)) * 100;
+      // Tỷ lệ thu hồi phụ phẩm % = (400 / 5000) * 100%
+      const expectedByproductRecovery = (400 / 5000) * 100;
       expect(kpi.byproductRecoveryPct).toBeCloseTo(expectedByproductRecovery, 4);
 
-      // Định mức tiêu hao điện = 35000 / (3500 * 0.955) kWh/tấn TP
-      const expectedElectricityNorm = 35000 / (3500 * 0.955);
+      // Định mức tiêu hao điện = 35000 / 3500 kWh/tấn TP
+      const expectedElectricityNorm = 35000 / 3500;
       expect(kpi.electricityNorm).toBeCloseTo(expectedElectricityNorm, 4);
     });
 
@@ -342,11 +342,11 @@ describe('Annual Production Plan Calculation Formulas & Utilities', () => {
       expect(summary.annualKPI.byproductRecoveryPct).toBe(0); // mockMaterials has no raw material
 
       // Annual electricity norm in annualKPI
-      expect(summary.annualKPI.electricityNorm).toBeCloseTo((50000 * 12) / (36000 * 0.955), 4);
+      expect(summary.annualKPI.electricityNorm).toBeCloseTo((50000 * 12) / 36000, 4);
 
       // Electricity norm divided only by finished goods (36,000 tons)
       const elecNorm = computeItemNorm(summary.annualFuelConsumption, 'fuel', summary.annualFinishedProductTons);
-      expect(elecNorm).toBeCloseTo((50000 * 12) / (36000 * 0.955), 4);
+      expect(elecNorm).toBeCloseTo((50000 * 12) / 36000, 4);
     });
   });
 });
