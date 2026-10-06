@@ -19,7 +19,6 @@ import {
   useProductionShifts,
   useCreateProductionShift,
   useUpdateProductionShift,
-  useVerifyProductionShift,
   useDeleteProductionShift,
 } from '../hooks/use-production-shifts';
 
@@ -61,12 +60,6 @@ export const ProductionPage: React.FC = () => {
     hasRole('operator') ||
     hasPermission('production.shift.write');
 
-  const canVerifyShifts =
-    hasRole('admin') ||
-    hasRole('plant_manager') ||
-    hasRole('production_lead') ||
-    hasPermission('production.shift.verify');
-
   const canDeleteShifts =
     hasRole('admin') ||
     hasRole('plant_manager') ||
@@ -94,12 +87,12 @@ export const ProductionPage: React.FC = () => {
   // Shared master data
   const { data: lines = [] } = useProductionLines();
 
-  // Metrics filters state (lineId, month, year)
+  // Metrics filters state (lineId, months, years)
   const now = new Date();
   const [metricFilters, setMetricFilters] = useState<ProductionMetricsFilterParams>({
     lineId: 'all',
-    month: now.getMonth() + 1,
-    year: now.getFullYear(),
+    months: [], // [] means "Tất cả các tháng"
+    years: [now.getFullYear()],
   });
 
   const { data: metrics, isLoading: isLoadingMetrics } = useProductionMetrics(metricFilters);
@@ -121,10 +114,10 @@ export const ProductionPage: React.FC = () => {
   const { data: shiftsData, isLoading: isLoadingShifts } = useProductionShifts(shiftFilters);
   const createShiftMutation = useCreateProductionShift();
   const updateShiftMutation = useUpdateProductionShift();
-  const verifyShiftMutation = useVerifyProductionShift();
   const deleteShiftMutation = useDeleteProductionShift();
 
   const [isShiftFormOpen, setIsShiftFormOpen] = useState(false);
+  const [shiftFormMode, setShiftFormMode] = useState<'shift' | 'date_range'>('shift');
   const [editingShift, setEditingShift] = useState<ProductionShift | null>(null);
   const [viewingShift, setViewingShift] = useState<ProductionShift | null>(null);
   const [deletingShift, setDeletingShift] = useState<ProductionShift | null>(null);
@@ -137,7 +130,7 @@ export const ProductionPage: React.FC = () => {
     },
     shifts: {
       title: 'Theo dõi ca & nhập liệu',
-      description: 'Ghi nhận số đo cân, công tơ điện nước, thời gian dừng chuyền và nhật ký ca',
+      description: 'Ghi nhận sản lượng thành phẩm, tiêu hao nguyên nhiên liệu, thời gian dừng chuyền và chất lượng sản phẩm',
     },
   };
 
@@ -165,16 +158,16 @@ export const ProductionPage: React.FC = () => {
         <ProductionMetricFilterBar
           lineId={metricFilters.lineId || 'all'}
           onLineIdChange={(lineId) => setMetricFilters((prev) => ({ ...prev, lineId }))}
-          month={metricFilters.month || now.getMonth() + 1}
-          onMonthChange={(month) => setMetricFilters((prev) => ({ ...prev, month }))}
-          year={metricFilters.year || now.getFullYear()}
-          onYearChange={(year) => setMetricFilters((prev) => ({ ...prev, year }))}
+          selectedMonths={metricFilters.months || []}
+          onMonthsChange={(months) => setMetricFilters((prev) => ({ ...prev, months }))}
+          selectedYears={metricFilters.years || []}
+          onYearsChange={(years) => setMetricFilters((prev) => ({ ...prev, years }))}
           lines={lines}
           onReset={() =>
             setMetricFilters({
               lineId: 'all',
-              month: now.getMonth() + 1,
-              year: now.getFullYear(),
+              months: [],
+              years: [now.getFullYear()],
             })
           }
         />
@@ -278,6 +271,12 @@ export const ProductionPage: React.FC = () => {
               }
               onCreate={() => {
                 setEditingShift(null);
+                setShiftFormMode('shift');
+                setIsShiftFormOpen(true);
+              }}
+              onCreateRange={() => {
+                setEditingShift(null);
+                setShiftFormMode('date_range');
                 setIsShiftFormOpen(true);
               }}
               canManage={canManageShifts}
@@ -293,13 +292,18 @@ export const ProductionPage: React.FC = () => {
               onView={(shift) => setViewingShift(shift)}
               onEdit={(shift) => {
                 setEditingShift(shift);
+                const isRange =
+                  Boolean(shift.downtime_breakdown?.is_date_range) ||
+                  shift.shift_code.startsWith('KY-') ||
+                  Boolean(shift.notes?.includes('[Kỳ:'));
+                setShiftFormMode(isRange ? 'date_range' : 'shift');
                 setIsShiftFormOpen(true);
               }}
               onDelete={(shift) => setDeletingShift(shift)}
-              onVerify={(shift) => verifyShiftMutation.mutate(shift.id)}
               canManage={canManageShifts}
-              canVerify={canVerifyShifts}
               canDelete={canDeleteShifts}
+              plannedProductivityTph={metrics?.plannedProductivityTph}
+              plannedRecoveryRatePct={metrics?.plannedRecoveryRatePct}
             />
           </div>
         )}
@@ -308,6 +312,7 @@ export const ProductionPage: React.FC = () => {
       {/* Shift Modals */}
       <ProductionShiftFormDialog
         isOpen={isShiftFormOpen}
+        initialMode={shiftFormMode}
         onClose={() => setIsShiftFormOpen(false)}
         onSubmit={async (values) => {
           if (editingShift) {
@@ -327,9 +332,7 @@ export const ProductionPage: React.FC = () => {
         isOpen={!!viewingShift}
         onClose={() => setViewingShift(null)}
         shift={viewingShift}
-        onVerify={(shift) => verifyShiftMutation.mutate(shift.id)}
         onDelete={(shift) => setDeletingShift(shift)}
-        canVerify={canVerifyShifts}
         canManage={canManageShifts}
         canDelete={canDeleteShifts}
       />

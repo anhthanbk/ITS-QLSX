@@ -4,9 +4,9 @@ import type { ProductionMetrics, ProductionMetricsFilterParams } from '../types'
 
 export function useProductionMetrics(params?: ProductionMetricsFilterParams) {
   return useQuery<ProductionMetrics, Error>({
-    queryKey: ['production-metrics', params?.lineId ?? 'all', params?.year, params?.month],
+    queryKey: ['production-metrics', params],
     queryFn: () => fetchProductionMetrics(params),
-    staleTime: 60 * 1000,
+    staleTime: 30 * 1000,
   });
 }
 

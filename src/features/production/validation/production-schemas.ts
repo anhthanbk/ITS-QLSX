@@ -120,6 +120,7 @@ export const shiftProductOutputSchema = z.object({
   product_id: z.string().optional(),
   product_name: z.string().min(1, 'Tên sản phẩm không được để trống'),
   product_sku: z.string().optional().default(''),
+  product_type: z.string().optional().nullable(),
   unit_of_measure: z.string().default('tấn'),
   is_out_of_plan: z.boolean().default(false),
   quantity_tons: z
@@ -133,8 +134,8 @@ export type ShiftProductOutputFormValues = z.infer<typeof shiftProductOutputSche
 export const shiftDowntimeEventSchema = z.object({
   id: z.string().optional(),
   type: z.enum(['breakdown_incident', 'planned_maintenance', 'scheduled_shutdown']),
-  start_time: z.string().default('08:00'),
-  end_time: z.string().default('08:30'),
+  start_time: z.string().optional().default('08:00'),
+  end_time: z.string().optional().default('08:30'),
   duration_minutes: z.number().min(0).default(30),
   duration_hours: z.number().min(0).default(0.5),
   incident_category: z.string().optional().nullable(),
@@ -154,7 +155,12 @@ export const shiftDowntimeBreakdownSchema = z.object({
   planned_shutdown_hours: z.number().min(0, 'Giờ nghỉ kế hoạch không được âm').default(0),
   planned_shutdown_reason: z.string().optional().nullable(),
   total_downtime_hours: z.number().min(0).default(0),
-  events: z.array(shiftDowntimeEventSchema).optional().default([]),
+  events: z.array(shiftDowntimeEventSchema).optional(),
+  is_date_range: z.boolean().optional(),
+  from_date: z.string().optional(),
+  to_date: z.string().optional(),
+  updated_by_name: z.string().optional().nullable(),
+  operator_name: z.string().optional().nullable(),
 });
 
 export type ShiftDowntimeBreakdownFormValues = z.infer<typeof shiftDowntimeBreakdownSchema>;
@@ -168,7 +174,8 @@ export const productionShiftSchema = z.object({
     .trim(),
   line_id: z.string().uuid('Vui lòng chọn dây chuyền'),
   shift_date: z.string().min(1, 'Vui lòng chọn ngày vận hành'),
-  shift_number: z.number().int().min(1).max(3),
+  end_date: z.string().optional().nullable(),
+  shift_number: z.number().int().min(1).max(3).default(1),
   standard_shift_hours: z
     .number({ invalid_type_error: 'Số giờ tiêu chuẩn phải là số' })
     .positive('Số giờ phải lớn hơn 0')
@@ -195,6 +202,7 @@ export const productionShiftSchema = z.object({
     .max(100, 'Tối đa 100%')
     .default(100.0),
   operator_employee_id: z.string().uuid().optional().nullable(),
+  operator_name: z.string().optional().nullable(),
   status: z.enum(['in_progress', 'completed', 'verified']).default('completed'),
   notes: z.string().optional().nullable(),
   materials_consumption: z.array(shiftMaterialConsumptionSchema).default([]),

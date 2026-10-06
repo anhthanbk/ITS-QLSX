@@ -221,6 +221,91 @@ describe('Production Module Validation Schemas', () => {
       expect(result.success).toBe(true);
     });
 
+    it('validates a production record across a date range with large standard and downtime hours', () => {
+      const dateRangeRecord = {
+        shift_code: 'KY-20261001-20261005-LINE01',
+        line_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+        shift_date: '2026-10-01',
+        end_date: '2026-10-05',
+        shift_number: 1,
+        standard_shift_hours: 120, // 5 days * 24 hours
+        total_downtime_hours: 36.5,
+        running_hours: 83.5,
+        raw_material_input_tons: 5000,
+        product_output_tons: 4100,
+        status: 'completed' as const,
+        downtime_breakdown: {
+          is_date_range: true,
+          from_date: '2026-10-01',
+          to_date: '2026-10-05',
+          maintenance_hours: 16.5,
+          incident_hours: 12.0,
+          planned_shutdown_hours: 8.0,
+          total_downtime_hours: 36.5,
+          events: [
+            {
+              type: 'planned_maintenance' as const,
+              duration_hours: 16.5,
+              reason: 'Bảo dưỡng định kỳ cả dây chuyền trong đợt nghỉ',
+            },
+            {
+              type: 'breakdown_incident' as const,
+              duration_hours: 12.0,
+              incident_category: 'Sự cố Điện',
+              reason: 'Mất điện lưới diện rộng',
+            },
+            {
+              type: 'scheduled_shutdown' as const,
+              duration_hours: 8.0,
+              reason: 'Nghỉ tránh giờ cao điểm và dọn vệ sinh khoáng sàng',
+            },
+          ],
+        },
+      };
+
+      const result = productionShiftSchema.safeParse(dateRangeRecord);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.standard_shift_hours).toBe(120);
+        expect(result.data.end_date).toBe('2026-10-05');
+        expect(result.data.downtime_breakdown?.is_date_range).toBe(true);
+        expect(result.data.downtime_breakdown?.events?.[0]?.duration_hours).toBe(16.5);
+      }
+    });
+
+    it('defaults actual_quality_rate_pct to 100% and validates boundary conditions', () => {
+      const shiftWithoutQuality = {
+        shift_code: 'CA-20261001-LINE01-S1',
+        line_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+        shift_date: '2026-10-01',
+        shift_number: 1,
+        standard_shift_hours: 8,
+        raw_material_input_tons: 100,
+        product_output_tons: 80,
+      };
+
+      const result = productionShiftSchema.parse(shiftWithoutQuality);
+      expect(result.actual_quality_rate_pct).toBe(100.0);
+
+      const invalidQualityOver100 = {
+        ...shiftWithoutQuality,
+        actual_quality_rate_pct: 105,
+      };
+      expect(productionShiftSchema.safeParse(invalidQualityOver100).success).toBe(false);
+
+      const invalidQualityNegative = {
+        ...shiftWithoutQuality,
+        actual_quality_rate_pct: -5,
+      };
+      expect(productionShiftSchema.safeParse(invalidQualityNegative).success).toBe(false);
+
+      const validCustomQuality = {
+        ...shiftWithoutQuality,
+        actual_quality_rate_pct: 98.5,
+      };
+      expect(productionShiftSchema.parse(validCustomQuality).actual_quality_rate_pct).toBe(98.5);
+    });
+
     it('rejects shift numbers outside 1-3', () => {
       const invalidShift = {
         shift_code: 'CA-01',

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Eye, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ProductionShift } from '../types';
-import { ShiftStatusBadge } from './production-status-badge';
+import { isFinishedProduct } from '../types';
 import { cn } from '@/lib/utils';
 
 interface ProductionShiftTableProps {
@@ -14,10 +14,10 @@ interface ProductionShiftTableProps {
   onView: (shift: ProductionShift) => void;
   onEdit: (shift: ProductionShift) => void;
   onDelete: (shift: ProductionShift) => void;
-  onVerify?: (shift: ProductionShift) => void;
   canManage: boolean;
-  canVerify?: boolean;
   canDelete?: boolean;
+  plannedProductivityTph?: number;
+  plannedRecoveryRatePct?: number;
 }
 
 export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
@@ -32,6 +32,8 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
   onDelete,
   canManage,
   canDelete = false,
+  plannedProductivityTph,
+  plannedRecoveryRatePct,
 }) => {
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
@@ -58,9 +60,8 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
   }
 
   // Target planned benchmarks per shift
-  const TARGET_OPERATING_HOURS = 7.0; // 7.0h chạy / ca 8h
   const TARGET_CAPACITY_TPH = 70.0; // 70 tấn quặng/h
-  const TARGET_EFFICIENCY_PCT = 100.0; // 100% hiệu suất
+  const TARGET_PRODUCTIVITY_TPH = 50.0; // ~50 TPH thành phẩm/h chuẩn
   const TARGET_RECOVERY_PCT = 84.19; // 84.19% thu hồi chuẩn
   const TARGET_OUTPUT_TONS = 400.0; // ~400 tấn TP chuẩn / ca
   const TARGET_OEE_PCT = 80.0; // 80% OEE chuẩn
@@ -69,22 +70,18 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
     value: string | number,
     unit: string,
     isMet: boolean,
-    targetLabel: string,
-    subNote?: string,
   ) => (
-    <div
-      className={cn(
-        'inline-flex flex-col items-center justify-center rounded-lg px-2.5 py-1 text-center min-w-[76px] transition-colors',
-        isMet
-          ? 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/35'
-          : 'bg-rose-500/15 text-rose-800 dark:text-rose-300 border border-rose-500/35',
-      )}
-    >
-      <span className="font-bold text-xs tracking-tight">
-        {value} <span className="text-[10px] font-normal opacity-85">{unit}</span>
+    <div className="flex items-center justify-center">
+      <span
+        className={cn(
+          'text-xs tracking-tight transition-colors',
+          isMet
+            ? 'font-bold text-emerald-600 dark:text-emerald-400'
+            : 'font-semibold text-foreground',
+        )}
+      >
+        {value}{unit ? ` ${unit}` : ''}
       </span>
-      <span className="text-[9px] font-medium opacity-80">{targetLabel}</span>
-      {subNote && <span className="text-[8px] opacity-70 mt-0.5">{subNote}</span>}
     </div>
   );
 
@@ -98,63 +95,149 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
               <th className="px-3 py-3 text-center">Mã Line</th>
               <th className="px-3 py-3 text-center">Thời gian vận hành</th>
               <th className="px-3 py-3 text-center">Công suất</th>
-              <th className="px-3 py-3 text-center">Hiệu suất</th>
+              <th className="px-3 py-3 text-center">Năng suất</th>
               <th className="px-3 py-3 text-center">Thu hồi</th>
               <th className="px-3 py-3 text-center">Sản lượng</th>
               <th className="px-3 py-3 text-center">OEE</th>
-              <th className="px-3 py-3">Trưởng ca</th>
-              <th className="px-3 py-3 text-center">Trạng thái</th>
+              <th className="px-3 py-3">Người cập nhật</th>
               <th className="px-3 py-3 text-center w-24">Thao tác</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border text-foreground">
+          <tbody className="divide-y border-border text-foreground">
             {data.map((shift) => {
+              const targetOperatingHours = Number(shift.standard_shift_hours || 8.0);
               const runHours = Number(
                 (
                   shift.running_hours ??
-                  Math.max(0, shift.standard_shift_hours - shift.total_downtime_hours)
+                  Math.max(0, targetOperatingHours - shift.total_downtime_hours)
                 ).toFixed(1),
               );
-              const rawInput = Number(shift.raw_material_input_tons || 0);
-              const finishedOutput = Number(shift.product_output_tons || 0);
+
+              const rawInput = (() => {
+                const direct = Number(shift.raw_material_input_tons || 0);
+                if (direct > 0) return direct;
+                const mats = Array.isArray(shift.materials_consumption)
+                  ? (shift.materials_consumption as Array<{
+                      resource_name?: string;
+                      category?: string;
+                      actual_quantity?: number;
+                    }>)
+                  : [];
+                const m = mats.find((item) => {
+                  const name = (item.resource_name || '').toLowerCase();
+                  return (
+                    item.category === 'material' ||
+                    name.includes('cát nguyên khai') ||
+                    name.includes('quặng') ||
+                    name.includes('nguyên khai')
+                  );
+                });
+                return Number(m?.actual_quantity) || 0;
+              })();
+
+              // Sản lượng: chỉ tính thành phẩm (loại trừ phụ phẩm, bán thành phẩm MM/Magmin/VFS/FSAP)
+              const finishedOutput = (() => {
+                if (Array.isArray(shift.products_output) && shift.products_output.length > 0) {
+                  return shift.products_output.reduce((acc, p) => {
+                    return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+                  }, 0);
+                }
+                return Number(shift.product_output_tons || 0);
+              })();
 
               // Công suất = Nguyên liệu cấp / Giờ chạy (TPH)
               const actualCapacity =
-                shift.actual_capacity_tph && shift.actual_capacity_tph > 0
-                  ? Number(shift.actual_capacity_tph)
-                  : runHours > 0 && rawInput > 0
-                    ? Number((rawInput / runHours).toFixed(1))
-                    : 0;
+                runHours > 0 && rawInput > 0
+                  ? Number((rawInput / runHours).toFixed(1))
+                  : (shift.actual_capacity_tph && shift.actual_capacity_tph > 0 ? Number(shift.actual_capacity_tph) : 0);
 
-              // Hiệu suất = Công suất thực tế / Công suất kế hoạch (70 TPH) * 100%
-              const efficiencyPct = Number(((actualCapacity / TARGET_CAPACITY_TPH) * 100).toFixed(1));
+              // Năng suất = Sản lượng thành phẩm / Giờ chạy (TPH)
+              const actualProductivity =
+                runHours > 0 && finishedOutput > 0
+                  ? Number((finishedOutput / runHours).toFixed(1))
+                  : 0;
 
               // Thu hồi = Thành phẩm / Nguyên liệu * 100%
               const actualRecovery =
-                shift.actual_recovery_rate_pct && shift.actual_recovery_rate_pct > 0
-                  ? Number(shift.actual_recovery_rate_pct)
-                  : rawInput > 0 && finishedOutput > 0
-                    ? Number(((finishedOutput / rawInput) * 100).toFixed(2))
-                    : 0;
+                rawInput > 0 && finishedOutput > 0
+                  ? Number(((finishedOutput / rawInput) * 100).toFixed(2))
+                  : (shift.actual_recovery_rate_pct && shift.actual_recovery_rate_pct > 0 ? Number(shift.actual_recovery_rate_pct) : 0);
 
-              // OEE = A x P x Q (Q = Chất lượng sản phẩm thực tế, mặc định ban đầu 100%)
+              // Lấy giờ sự cố từ downtime_breakdown
+              const shiftIncidentHours = (() => {
+                const bd = shift.downtime_breakdown as Record<string, unknown> | undefined;
+                if (!bd || typeof bd !== 'object') return 0;
+                if (bd.incident_hours !== undefined && bd.incident_hours !== null) {
+                  return Number(bd.incident_hours) || 0;
+                }
+                if (Array.isArray(bd.events)) {
+                  return (
+                    bd.events as Array<{
+                      type?: string;
+                      duration_minutes?: number;
+                      duration_hours?: number;
+                    }>
+                  ).reduce((sum: number, ev) => {
+                    if (ev.type === 'breakdown_incident') {
+                      const mins = Number(ev.duration_minutes) || (Number(ev.duration_hours) || 0) * 60;
+                      return sum + mins / 60;
+                    }
+                    return sum;
+                  }, 0);
+                }
+                return 0;
+              })();
+
+              // OEE = A x P x Q
+              // A: Thời gian vận hành / (Thời gian vận hành + Thời gian sự cố)
+              const availScore =
+                runHours + shiftIncidentHours > 0
+                  ? (runHours / (runHours + shiftIncidentHours)) * 100
+                  : (runHours > 0 ? 100 : 0);
+
+              // P: Năng suất thực tế / Năng suất kế hoạch
+              const effectivePlannedRecovery =
+                plannedRecoveryRatePct && plannedRecoveryRatePct > 0
+                  ? plannedRecoveryRatePct
+                  : TARGET_RECOVERY_PCT;
+
+              const plannedProductivity =
+                plannedProductivityTph && plannedProductivityTph > 0
+                  ? plannedProductivityTph
+                  : (targetOperatingHours <= 8 ? TARGET_PRODUCTIVITY_TPH : (70.0 * (effectivePlannedRecovery / 100)));
+
+              const perfScore =
+                plannedProductivity > 0 && actualProductivity > 0
+                  ? (actualProductivity / plannedProductivity) * 100
+                  : 0;
+
+              // Q: Chất lượng thành phẩm
               const actualQuality =
                 shift.actual_quality_rate_pct !== null && shift.actual_quality_rate_pct !== undefined
                   ? Number(shift.actual_quality_rate_pct)
                   : 100;
-              const availScore = Math.min(100, Math.max(0, (runHours / (shift.standard_shift_hours || 8)) * 100));
-              const perfScore = Math.min(100, (actualCapacity / TARGET_CAPACITY_TPH) * 100);
-              const qualScore = Math.min(100, actualQuality);
+
+              const availabilityScore = Math.min(100, Math.max(0, availScore));
+              const performanceScore = Math.min(100, Math.max(0, perfScore));
+              const qualityScore = Math.min(100, Math.max(0, actualQuality));
+
               const oee =
-                runHours > 0 && actualCapacity > 0
-                  ? Number((((availScore / 100) * (perfScore / 100) * (qualScore / 100)) * 100).toFixed(1))
+                runHours > 0 && actualProductivity > 0
+                  ? Number(
+                      (
+                        ((availabilityScore / 100) *
+                          (performanceScore / 100) *
+                          (qualityScore / 100)) *
+                        100
+                      ).toFixed(1),
+                    )
                   : 0;
 
               // Comparisons with Target / Plan
-              const isRunHoursMet = runHours >= TARGET_OPERATING_HOURS;
+              const isRunHoursMet = runHours >= targetOperatingHours;
               const isCapMet = actualCapacity >= TARGET_CAPACITY_TPH;
-              const isEffMet = efficiencyPct >= TARGET_EFFICIENCY_PCT;
-              const isRecMet = actualRecovery >= TARGET_RECOVERY_PCT;
+              const isProdMet = actualProductivity >= plannedProductivity;
+              const isRecMet = actualRecovery >= effectivePlannedRecovery;
               const isOutputMet = finishedOutput >= TARGET_OUTPUT_TONS;
               const isOeeMet = oee >= TARGET_OEE_PCT;
 
@@ -162,13 +245,37 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                 <tr key={shift.id} className="transition-colors hover:bg-muted/30">
                   {/* 1. Ngày & Ca */}
                   <td className="px-3 py-3">
-                    <div className="font-semibold text-foreground">{shift.shift_date}</div>
-                    <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                      Ca {shift.shift_number}
-                    </span>
+                    {(() => {
+                      const isRange = Boolean(
+                        shift.end_date ||
+                        shift.shift_code?.startsWith('KY-') ||
+                        shift.downtime_breakdown?.is_date_range
+                      );
+                      const toDate = shift.end_date || shift.downtime_breakdown?.to_date;
+
+                      return (
+                        <>
+                          <div className="font-semibold text-foreground">
+                            {shift.shift_date}
+                            {isRange && toDate && toDate !== shift.shift_date && (
+                              <span className="text-muted-foreground font-normal"> → {toDate}</span>
+                            )}
+                          </div>
+                          {isRange ? (
+                            <span className="inline-flex items-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 text-[10px] font-semibold">
+                              Theo kỳ ({targetOperatingHours}h)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                              Ca {shift.shift_number}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </td>
 
-                  {/* 2. Mã Line (thay thế cho Tên Dây chuyền và Mã ca) */}
+                  {/* 2. Mã Line */}
                   <td className="px-3 py-3 text-center">
                     <span
                       className="inline-block rounded font-mono font-bold text-xs bg-primary/10 text-primary px-2 py-0.5"
@@ -178,79 +285,66 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                     </span>
                   </td>
 
-                  {/* 3. Thời gian vận hành (h) */}
+                  {/* 3. Thời gian vận hành: chỉ hiện số tg chay/tg dừng */}
                   <td className="px-3 py-3 text-center">
                     {renderMetricCell(
-                      runHours,
-                      'h',
+                      `${runHours}h / ${shift.total_downtime_hours}h`,
+                      '',
                       isRunHoursMet,
-                      `KH: ${TARGET_OPERATING_HOURS}h`,
-                      shift.total_downtime_hours > 0 ? `(${shift.total_downtime_hours}h dừng)` : undefined,
                     )}
                   </td>
 
-                  {/* 4. Công suất (TPH) */}
+                  {/* 4. Công suất: chỉ hiện công suất (= nguyên liệu / thời gian vận hành) */}
                   <td className="px-3 py-3 text-center">
                     {renderMetricCell(
                       actualCapacity,
                       'TPH',
                       isCapMet,
-                      `KH: ${TARGET_CAPACITY_TPH}`,
                     )}
                   </td>
 
-                  {/* 5. Hiệu suất (%) */}
+                  {/* 5. Năng suất (= sản lượng thành phẩm / thời gian vận hành) */}
                   <td className="px-3 py-3 text-center">
                     {renderMetricCell(
-                      efficiencyPct,
-                      '%',
-                      isEffMet,
-                      `KH: ${TARGET_EFFICIENCY_PCT}%`,
+                      actualProductivity,
+                      'TPH',
+                      isProdMet,
                     )}
                   </td>
 
-                  {/* 6. Thu hồi (%) */}
+                  {/* 6. Thu hồi (= sản lượng thành phẩm / nguyên liệu) */}
                   <td className="px-3 py-3 text-center">
                     {renderMetricCell(
-                      actualRecovery,
-                      '%',
+                      `${actualRecovery}%`,
+                      '',
                       isRecMet,
-                      `KH: ${TARGET_RECOVERY_PCT}%`,
                     )}
                   </td>
 
-                  {/* 7. Sản lượng (Tấn) */}
+                  {/* 7. Sản lượng: chỉ tính thành phẩm */}
                   <td className="px-3 py-3 text-center">
                     {renderMetricCell(
                       finishedOutput.toLocaleString('vi-VN'),
                       'T',
                       isOutputMet,
-                      `KH: ${TARGET_OUTPUT_TONS}T`,
-                      rawInput > 0 ? `Quặng: ${rawInput}T` : undefined,
                     )}
                   </td>
 
-                  {/* 8. OEE (%) */}
+                  {/* 8. OEE (tính lại) */}
                   <td className="px-3 py-3 text-center">
                     {renderMetricCell(
-                      oee,
-                      '%',
+                      `${oee}%`,
+                      '',
                       isOeeMet,
-                      `KH: ${TARGET_OEE_PCT}%`,
                     )}
                   </td>
 
-                  {/* 9. Trưởng ca */}
+                  {/* 9. Trưởng ca (người cập nhật) */}
                   <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
                     {shift.operator_name || '---'}
                   </td>
 
-                  {/* 10. Trạng thái */}
-                  <td className="px-3 py-3 text-center whitespace-nowrap">
-                    <ShiftStatusBadge status={shift.status} />
-                  </td>
-
-                  {/* 11. Thao tác (ĐÃ BỎ NÚT NGHIỆM THU) */}
+                  {/* 10. Thao tác */}
                   <td className="px-3 py-3 text-center">
                     <div className="flex items-center justify-center gap-1.5">
                       <button
@@ -261,7 +355,7 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                       >
                         <Eye className="h-4 w-4" />
                       </button>
-                      {canManage && shift.status !== 'verified' && (
+                      {canManage && (
                         <button
                           type="button"
                           onClick={() => onEdit(shift)}

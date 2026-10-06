@@ -59,8 +59,8 @@ export const ProductionShiftDeleteDialog: React.FC<ProductionShiftDeleteDialogPr
         </div>
 
         <p className="mt-4 text-xs text-muted-foreground">
-          Bạn có chắc chắn muốn xóa bản ghi ca này? Toàn bộ dữ liệu sản lượng, tiêu hao nguyên nhiên liệu,
-          thời gian dừng chuyền và nhật ký ca liên quan sẽ bị xóa vĩnh viễn và không thể hoàn tác.
+          Bạn có chắc chắn muốn xóa bản ghi ca này? Toàn bộ dữ liệu sản lượng, tiêu hao nguyên nhiên liệu
+          và thời gian dừng chuyền liên quan sẽ bị xóa vĩnh viễn và không thể hoàn tác.
         </p>
 
         <div className="mt-6 flex items-center justify-end gap-2">

@@ -282,7 +282,6 @@ describe('Production UI Components Tests', () => {
       operator_employee_id: null,
       operator_name: 'Nguyễn Văn Vận Hành',
       status: 'completed',
-      verified_by: null,
       notes: 'Chạy tốt',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -301,13 +300,12 @@ describe('Production UI Components Tests', () => {
           onEdit={vi.fn()}
           onDelete={vi.fn()}
           canManage={true}
-          canVerify={true}
         />,
       );
 
       expect(screen.getByText('LINE-01')).toBeInTheDocument();
       expect(screen.getByText(/745/)).toBeInTheDocument();
-      expect(screen.getByText('Đã chốt ca')).toBeInTheDocument();
+      expect(screen.getByText('Nguyễn Văn Vận Hành')).toBeInTheDocument();
     });
 
     it('renders delete button when canDelete is true (Admin / Trưởng phòng SX)', () => {
@@ -324,7 +322,6 @@ describe('Production UI Components Tests', () => {
           onEdit={vi.fn()}
           onDelete={handleDelete}
           canManage={true}
-          canVerify={true}
           canDelete={true}
         />,
       );
@@ -348,7 +345,6 @@ describe('Production UI Components Tests', () => {
           onEdit={vi.fn()}
           onDelete={vi.fn()}
           canManage={true}
-          canVerify={true}
           canDelete={false}
         />,
       );
@@ -377,7 +373,6 @@ describe('Production UI Components Tests', () => {
       operator_employee_id: null,
       operator_name: 'Nguyễn Văn Vận Hành',
       status: 'completed',
-      verified_by: null,
       notes: 'Chạy tốt',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

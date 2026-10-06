@@ -126,6 +126,7 @@ export interface ShiftProductOutput {
   product_id?: string;
   product_name: string;
   product_sku: string;
+  product_type?: string | null;
   unit_of_measure: string;
   is_out_of_plan: boolean;
   quantity_tons: number;
@@ -154,6 +155,11 @@ export interface ShiftDowntimeBreakdown {
   planned_shutdown_reason?: string | null;
   total_downtime_hours: number;
   events?: ShiftDowntimeEvent[];
+  is_date_range?: boolean;
+  from_date?: string;
+  to_date?: string;
+  updated_by_name?: string | null;
+  operator_name?: string | null;
 }
 
 export interface ProductionShift {
@@ -163,6 +169,7 @@ export interface ProductionShift {
   line_name?: string;
   line_code?: string;
   shift_date: string;
+  end_date?: string | null;
   shift_number: number;
   standard_shift_hours: number;
   total_downtime_hours: number;
@@ -175,8 +182,7 @@ export interface ProductionShift {
   actual_quality_rate_pct?: number;
   operator_employee_id: string | null;
   operator_name?: string;
-  status: ShiftStatus;
-  verified_by: string | null;
+  status?: ShiftStatus;
   notes: string | null;
   materials_consumption?: ShiftMaterialConsumption[];
   products_output?: ShiftProductOutput[];
@@ -345,6 +351,8 @@ export interface ProductionMetricsFilterParams {
   lineId?: string;
   year?: number;
   month?: number;
+  years?: number[];
+  months?: number[];
 }
 
 export interface ConsumptionNormMetric {
@@ -379,6 +387,7 @@ export interface ProductionMetrics {
   availabilityPct: number;
   // 4. OEE & Breakdown
   plannedCapacityTph: number;
+  plannedProductivityTph?: number;
   avgCapacityTph: number;
   targetQualityRatePct: number;
   availabilityScore: number;
@@ -476,6 +485,54 @@ export function normalizeProductType(type?: string | null): PlanProductClassific
     return 'semi_finished';
   }
   return 'finished_good';
+}
+
+/**
+ * Kiểm tra xem một sản phẩm có phải là sản phẩm / thành phẩm chính hay không.
+ * Loại trừ hoàn toàn phụ phẩm, bán thành phẩm (MM, Magmin, VFS, FSAP, v.v.).
+ */
+export function isFinishedProduct(item?: {
+  product_sku?: string | null;
+  product_name?: string | null;
+  product_type?: string | null;
+}): boolean {
+  if (!item) return false;
+
+  if (item.product_type) {
+    const norm = normalizeProductType(item.product_type);
+    if (norm === 'by_product' || norm === 'semi_finished') {
+      return false;
+    }
+    if (norm === 'finished_good') {
+      return true;
+    }
+  }
+
+  const sku = (item.product_sku || '').trim().toLowerCase();
+  const name = (item.product_name || '').trim().toLowerCase();
+
+  // Danh mục phụ phẩm thực tế tại nhà máy: MM, MAGMIN, VFS, FSAP
+  if (
+    sku === 'mm' ||
+    sku === 'magmin' ||
+    sku === 'vfs' ||
+    sku === 'fsap' ||
+    sku.startsWith('mm-') ||
+    sku.endsWith('-mm') ||
+    sku.includes('magmin') ||
+    sku.includes('vfs') ||
+    sku.includes('fsap') ||
+    name.includes('phụ phẩm') ||
+    name.includes('bán thành phẩm') ||
+    name.includes('sau chế biến') ||
+    name.includes('magmin') ||
+    name.includes('vfs') ||
+    name.includes('fsap')
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export interface AnnualPlanData {

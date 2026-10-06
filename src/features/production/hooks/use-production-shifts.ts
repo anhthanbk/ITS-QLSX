@@ -4,7 +4,6 @@ import {
   fetchProductionShiftById,
   createProductionShift,
   updateProductionShift,
-  verifyProductionShift,
   deleteProductionShift,
   createShiftDowntime,
   fetchShiftPlanContext,
@@ -78,22 +77,6 @@ export function useUpdateProductionShift() {
   });
 }
 
-export function useVerifyProductionShift() {
-  const queryClient = useQueryClient();
-  const { success, error } = useToast();
-
-  return useMutation({
-    mutationFn: (id: string) => verifyProductionShift(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['production-shifts'] });
-      queryClient.invalidateQueries({ queryKey: ['production-shift-detail'] });
-      success('Số liệu ca sản xuất đã được kiểm tra và xác nhận.', 'Đã xác nhận');
-    },
-    onError: (err: Error) => {
-      error(err.message || 'Không thể xác nhận ca sản xuất.', 'Lỗi xác nhận');
-    },
-  });
-}
 
 export function useDeleteProductionShift() {
   const queryClient = useQueryClient();

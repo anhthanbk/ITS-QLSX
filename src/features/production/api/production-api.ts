@@ -23,8 +23,10 @@ import type {
   AnnualPlanProductRow,
   AnnualPlanMaterialRow,
   PlanStatus,
+  ShiftStatus,
   ShiftDowntimeBreakdown,
 } from '../types';
+import { isFinishedProduct } from '../types';
 import {
   getCalendarHours,
   calculateOperatingHours,
@@ -138,8 +140,7 @@ interface RawShiftRow {
   actual_recovery_rate_pct?: number | string | null;
   actual_quality_rate_pct?: number | string | null;
   operator_employee_id: string | null;
-  status: ProductionShift['status'];
-  verified_by: string | null;
+  status?: string | null;
   notes: string | null;
   materials_consumption?: unknown;
   products_output?: unknown;
@@ -1107,7 +1108,7 @@ export async function deleteTechnoEconomicNorm(id: string): Promise<void> {
 export async function fetchProductionShifts(
   params: ProductionShiftFilterParams,
 ): Promise<PaginatedResult<ProductionShift>> {
-  const { search, lineId, shiftNumber, status, fromDate, toDate, page, pageSize } = params;
+  const { search, lineId, shiftNumber, fromDate, toDate, page, pageSize } = params;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -1118,7 +1119,7 @@ export async function fetchProductionShifts(
         id, shift_code, line_id, shift_date, shift_number, standard_shift_hours,
         total_downtime_hours, running_hours, raw_material_input_tons, product_output_tons,
         byproduct_output_tons, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct,
-        operator_employee_id, status, verified_by, notes,
+        operator_employee_id, notes,
         materials_consumption, products_output, downtime_breakdown,
         created_at, updated_at,
         production_lines ( name, code ),
@@ -1135,9 +1136,6 @@ export async function fetchProductionShifts(
     }
     if (shiftNumber && shiftNumber !== 'all') {
       query = query.eq('shift_number', shiftNumber);
-    }
-    if (status && status !== 'all') {
-      query = query.eq('status', status);
     }
     if (fromDate) {
       query = query.gte('shift_date', fromDate);
@@ -1174,13 +1172,18 @@ export async function fetchProductionShifts(
       operator_employee_id: row.operator_employee_id,
       operator_name: row.employees
         ? [row.employees.last_name, row.employees.first_name].filter(Boolean).join(' ') || undefined
-        : undefined,
-      status: row.status,
-      verified_by: row.verified_by,
+        : ((row.downtime_breakdown as Record<string, unknown> | null)?.updated_by_name as string) ||
+          ((row.downtime_breakdown as Record<string, unknown> | null)?.operator_name as string) ||
+          'Lê Anh Thân',
+      status: (row.status as ShiftStatus) || undefined,
       notes: row.notes,
       materials_consumption: Array.isArray(row.materials_consumption) ? row.materials_consumption : [],
       products_output: Array.isArray(row.products_output) ? row.products_output : [],
       downtime_breakdown: row.downtime_breakdown && typeof row.downtime_breakdown === 'object' ? (row.downtime_breakdown as ProductionShift['downtime_breakdown']) : undefined,
+      end_date:
+        (row.downtime_breakdown as Record<string, unknown> | null)?.to_date as string | undefined ||
+        row.notes?.match(/\[Kỳ:\s*([^\s]+)\s*(?:đến|->|-)\s*([^\]]+)\]/i)?.[2]?.trim() ||
+        null,
       created_at: row.created_at,
       updated_at: row.updated_at,
     }));
@@ -1199,56 +1202,63 @@ export async function fetchProductionShiftById(id: string): Promise<{
   shift: ProductionShift;
   downtimes: ShiftDowntime[];
 }> {
-  const { data: rawShift, error: shiftError } = await supabase
-    .from('production_shifts')
-    .select(
-      `
-      id, shift_code, line_id, shift_date, shift_number, standard_shift_hours,
-      total_downtime_hours, running_hours, raw_material_input_tons, product_output_tons,
-      byproduct_output_tons, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct,
-      operator_employee_id, status, verified_by, notes,
-      materials_consumption, products_output, downtime_breakdown,
-      created_at, updated_at,
-      production_lines ( name, code ),
-      employees ( first_name, last_name, employee_code )
-    `,
-    )
-    .eq('id', id)
-    .single();
+    const query = supabase
+      .from('production_shifts')
+      .select(
+        `
+        id, shift_code, line_id, shift_date, shift_number, standard_shift_hours,
+        total_downtime_hours, running_hours, raw_material_input_tons, product_output_tons,
+        byproduct_output_tons, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct,
+        operator_employee_id, notes,
+        materials_consumption, products_output, downtime_breakdown,
+        created_at, updated_at,
+        production_lines ( name, code ),
+        employees ( first_name, last_name, employee_code )
+      `,
+      )
+      .eq('id', id)
+      .single();
 
-  if (shiftError) throw shiftError;
-  const shiftData = rawShift as unknown as RawShiftRow;
+    const { data: rawShift, error: shiftError } = await query;
 
-  const shift: ProductionShift = {
-    id: shiftData.id,
-    shift_code: shiftData.shift_code,
-    line_id: shiftData.line_id,
-    line_name: shiftData.production_lines?.name,
-    line_code: shiftData.production_lines?.code,
-    shift_date: shiftData.shift_date,
-    shift_number: shiftData.shift_number,
-    standard_shift_hours: Number(shiftData.standard_shift_hours),
-    total_downtime_hours: Number(shiftData.total_downtime_hours),
-    running_hours: Number(shiftData.running_hours),
-    raw_material_input_tons: Number(shiftData.raw_material_input_tons),
-    product_output_tons: Number(shiftData.product_output_tons),
-    byproduct_output_tons: Number(shiftData.byproduct_output_tons),
-    actual_capacity_tph: Number(shiftData.actual_capacity_tph),
-    actual_recovery_rate_pct: Number(shiftData.actual_recovery_rate_pct),
-    actual_quality_rate_pct:
-      shiftData.actual_quality_rate_pct !== null && shiftData.actual_quality_rate_pct !== undefined
-        ? Number(shiftData.actual_quality_rate_pct)
-        : 100,
-    operator_employee_id: shiftData.operator_employee_id,
-    operator_name: shiftData.employees
-      ? [shiftData.employees.last_name, shiftData.employees.first_name].filter(Boolean).join(' ') || undefined
-      : undefined,
-    status: shiftData.status,
-    verified_by: shiftData.verified_by,
-    notes: shiftData.notes,
-    materials_consumption: Array.isArray(shiftData.materials_consumption) ? shiftData.materials_consumption : [],
-    products_output: Array.isArray(shiftData.products_output) ? shiftData.products_output : [],
-    downtime_breakdown: shiftData.downtime_breakdown && typeof shiftData.downtime_breakdown === 'object' ? (shiftData.downtime_breakdown as ProductionShift['downtime_breakdown']) : undefined,
+    if (shiftError) throw shiftError;
+    const shiftData = rawShift as unknown as RawShiftRow;
+
+    const shift: ProductionShift = {
+      id: shiftData.id,
+      shift_code: shiftData.shift_code,
+      line_id: shiftData.line_id,
+      line_name: shiftData.production_lines?.name,
+      line_code: shiftData.production_lines?.code,
+      shift_date: shiftData.shift_date,
+      shift_number: shiftData.shift_number,
+      standard_shift_hours: Number(shiftData.standard_shift_hours),
+      total_downtime_hours: Number(shiftData.total_downtime_hours),
+      running_hours: Number(shiftData.running_hours),
+      raw_material_input_tons: Number(shiftData.raw_material_input_tons),
+      product_output_tons: Number(shiftData.product_output_tons),
+      byproduct_output_tons: Number(shiftData.byproduct_output_tons),
+      actual_capacity_tph: Number(shiftData.actual_capacity_tph),
+      actual_recovery_rate_pct: Number(shiftData.actual_recovery_rate_pct),
+      actual_quality_rate_pct:
+        shiftData.actual_quality_rate_pct !== null && shiftData.actual_quality_rate_pct !== undefined
+          ? Number(shiftData.actual_quality_rate_pct)
+          : 100,
+      operator_employee_id: shiftData.operator_employee_id,
+      operator_name: shiftData.employees
+        ? [shiftData.employees.last_name, shiftData.employees.first_name].filter(Boolean).join(' ') || undefined
+        : ((shiftData.downtime_breakdown as Record<string, unknown> | null)?.updated_by_name as string) ||
+          ((shiftData.downtime_breakdown as Record<string, unknown> | null)?.operator_name as string) ||
+          'Lê Anh Thân',
+      status: 'completed' as ShiftStatus,
+      notes: shiftData.notes,
+      materials_consumption: Array.isArray(shiftData.materials_consumption) ? shiftData.materials_consumption : [],
+      products_output: Array.isArray(shiftData.products_output) ? shiftData.products_output : [],
+      downtime_breakdown: shiftData.downtime_breakdown && typeof shiftData.downtime_breakdown === 'object' ? (shiftData.downtime_breakdown as ProductionShift['downtime_breakdown']) : undefined,
+    end_date:
+      (shiftData.downtime_breakdown as Record<string, unknown> | null)?.to_date as string | undefined ||
+      shiftData.notes?.match(/\[Kỳ:\s*([^\s]+)\s*(?:đến|->|-)\s*([^\]]+)\]/i)?.[2]?.trim() ||
+      null,
     created_at: shiftData.created_at,
     updated_at: shiftData.updated_at,
   };
@@ -1290,28 +1300,37 @@ export async function createProductionShift(
 ): Promise<ProductionShift> {
   const prods = values.products_output || [];
   const finishedFromProds = prods.reduce((acc, p) => {
-    const sku = (p.product_sku || '').toLowerCase();
-    const name = (p.product_name || '').toLowerCase();
-    const isByproduct = sku.includes('mm') || sku.includes('magmin') || name.includes('phụ phẩm');
-    return !isByproduct ? acc + (Number(p.quantity_tons) || 0) : acc;
+    return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
   }, 0);
   const byproductFromProds = prods.reduce((acc, p) => {
-    const sku = (p.product_sku || '').toLowerCase();
-    const name = (p.product_name || '').toLowerCase();
-    const isByproduct = sku.includes('mm') || sku.includes('magmin') || name.includes('phụ phẩm');
-    return isByproduct ? acc + (Number(p.quantity_tons) || 0) : acc;
+    return !isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
   }, 0);
 
   const productOutputTons =
-    Number(values.product_output_tons) > 0
-      ? Number(values.product_output_tons)
-      : (finishedFromProds > 0 ? finishedFromProds : prods.reduce((a, p) => a + (Number(p.quantity_tons) || 0), 0));
+    finishedFromProds > 0
+      ? finishedFromProds
+      : (Number(values.product_output_tons) > 0 ? Number(values.product_output_tons) : 0);
   const byproductOutputTons =
-    Number(values.byproduct_output_tons) > 0
-      ? Number(values.byproduct_output_tons)
-      : byproductFromProds;
+    byproductFromProds > 0
+      ? byproductFromProds
+      : (Number(values.byproduct_output_tons) > 0 ? Number(values.byproduct_output_tons) : 0);
 
-  const rawInput = Number(values.raw_material_input_tons) || 0;
+  const mats = values.materials_consumption || [];
+  const rawFromMats = mats.reduce((acc, m) => {
+    const name = (m.resource_name || '').toLowerCase();
+    const isRaw =
+      m.category === 'material' ||
+      name.includes('cát nguyên khai') ||
+      name.includes('quặng') ||
+      name.includes('nguyên khai');
+    return isRaw ? acc + (Number(m.actual_quantity) || 0) : acc;
+  }, 0);
+
+  const rawInput =
+    Number(values.raw_material_input_tons) > 0
+      ? Number(values.raw_material_input_tons)
+      : rawFromMats;
+
   const runningHours = Math.max(
     0,
     values.standard_shift_hours - (values.total_downtime_hours || 0),
@@ -1325,7 +1344,12 @@ export async function createProductionShift(
   const recovery =
     rawInput > 0 && productOutputTons > 0
       ? Number(((productOutputTons / rawInput) * 100).toFixed(2))
-      : 0;
+      : (Number(values.actual_recovery_rate_pct) > 0 ? Number(values.actual_recovery_rate_pct) : 0);
+
+  const breakdown = { ...(values.downtime_breakdown || {}) };
+  if (values.operator_name) {
+    (breakdown as Record<string, unknown>).updated_by_name = values.operator_name;
+  }
 
   const { data, error } = await supabase
     .from('production_shifts')
@@ -1337,6 +1361,7 @@ export async function createProductionShift(
         shift_number: values.shift_number,
         standard_shift_hours: values.standard_shift_hours,
         total_downtime_hours: values.total_downtime_hours,
+        running_hours: runningHours,
         raw_material_input_tons: rawInput,
         product_output_tons: productOutputTons,
         byproduct_output_tons: byproductOutputTons,
@@ -1344,15 +1369,14 @@ export async function createProductionShift(
         actual_recovery_rate_pct: recovery,
         actual_quality_rate_pct: values.actual_quality_rate_pct ?? 100,
         operator_employee_id: values.operator_employee_id || null,
-        status: values.status || 'completed',
         notes: values.notes || null,
         materials_consumption: values.materials_consumption || [],
         products_output: values.products_output || [],
-        downtime_breakdown: values.downtime_breakdown || {},
+        downtime_breakdown: breakdown,
       },
     ])
     .select(
-      'id, shift_code, line_id, shift_date, shift_number, standard_shift_hours, total_downtime_hours, running_hours, raw_material_input_tons, product_output_tons, byproduct_output_tons, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct, operator_employee_id, status, verified_by, notes, materials_consumption, products_output, downtime_breakdown, created_at, updated_at',
+      'id, shift_code, line_id, shift_date, shift_number, standard_shift_hours, total_downtime_hours, running_hours, raw_material_input_tons, product_output_tons, byproduct_output_tons, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct, operator_employee_id, notes, materials_consumption, products_output, downtime_breakdown, created_at, updated_at',
     )
     .single();
 
@@ -1360,9 +1384,8 @@ export async function createProductionShift(
 
   // Sync downtime records to production_shift_downtime
   const shiftId = data.id;
-  const breakdown = values.downtime_breakdown;
   if (breakdown) {
-    await syncShiftDowntimeRecords(shiftId, values.line_id, values.shift_date, breakdown);
+    await syncShiftDowntimeRecords(shiftId, values.line_id, values.shift_date, breakdown as unknown as ShiftDowntimeBreakdown);
   }
 
   return data as unknown as ProductionShift;
@@ -1457,43 +1480,117 @@ export async function updateProductionShift(
   id: string,
   values: Partial<ProductionShiftFormValues>,
 ): Promise<ProductionShift> {
+  const prods = values.products_output;
+  let finishedSum: number | undefined = undefined;
+  let byproductSum: number | undefined = undefined;
+  if (prods && Array.isArray(prods)) {
+    finishedSum = prods.reduce((acc, p) => {
+      return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+    }, 0);
+    byproductSum = prods.reduce((acc, p) => {
+      return !isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+    }, 0);
+  }
+
+  const mats = values.materials_consumption;
+  let rawFromMats: number | undefined = undefined;
+  if (mats && Array.isArray(mats)) {
+    rawFromMats = mats.reduce((acc, m) => {
+      const name = (m.resource_name || '').toLowerCase();
+      const isRaw =
+        m.category === 'material' ||
+        name.includes('cát nguyên khai') ||
+        name.includes('quặng') ||
+        name.includes('nguyên khai');
+      return isRaw ? acc + (Number(m.actual_quantity) || 0) : acc;
+    }, 0);
+  }
+
+  const rawInput =
+    values.raw_material_input_tons !== undefined && Number(values.raw_material_input_tons) > 0
+      ? Number(values.raw_material_input_tons)
+      : rawFromMats;
+
+  const productOutputTons =
+    values.product_output_tons !== undefined && Number(values.product_output_tons) > 0
+      ? Number(values.product_output_tons)
+      : finishedSum;
+
+  const byproductOutputTons =
+    values.byproduct_output_tons !== undefined && Number(values.byproduct_output_tons) > 0
+      ? Number(values.byproduct_output_tons)
+      : byproductSum;
+
+  let calculatedRecovery: number | undefined = undefined;
+  if (rawInput !== undefined && productOutputTons !== undefined) {
+    if (rawInput > 0 && productOutputTons > 0) {
+      calculatedRecovery = Number(((productOutputTons / rawInput) * 100).toFixed(2));
+    }
+  }
+
+  const stdHours = values.standard_shift_hours !== undefined ? Number(values.standard_shift_hours) : undefined;
+  const downHours = values.total_downtime_hours !== undefined ? Number(values.total_downtime_hours) : undefined;
+  let calculatedRunningHours: number | undefined = undefined;
+  if (stdHours !== undefined || downHours !== undefined) {
+    calculatedRunningHours = Math.max(0, Number(((stdHours ?? 8) - (downHours ?? 0)).toFixed(2)));
+  }
+
+  let calculatedCapacity: number | undefined = undefined;
+  if (calculatedRunningHours !== undefined && rawInput !== undefined) {
+    if (calculatedRunningHours > 0 && rawInput > 0) {
+      calculatedCapacity = Number((rawInput / calculatedRunningHours).toFixed(2));
+    }
+  }
+
+  // Loại bỏ các trường ảo không có trong bảng production_shifts của DB (như end_date, line_name, v.v.)
+  const rawValues = { ...(values as Record<string, unknown>) };
+  delete rawValues.end_date;
+  delete rawValues.line_name;
+  delete rawValues.line_code;
+  delete rawValues.operator_name;
+
+  const breakdown = values.downtime_breakdown
+    ? { ...(values.downtime_breakdown as Record<string, unknown>) }
+    : undefined;
+  if (breakdown && values.operator_name) {
+    breakdown.updated_by_name = values.operator_name;
+  }
+
   const updatePayload: Database['public']['Tables']['production_shifts']['Update'] = {
-    ...(values as unknown as Database['public']['Tables']['production_shifts']['Update']),
+    ...(rawValues as unknown as Database['public']['Tables']['production_shifts']['Update']),
+    ...(rawInput !== undefined ? { raw_material_input_tons: rawInput } : {}),
+    ...(productOutputTons !== undefined ? { product_output_tons: productOutputTons } : {}),
+    ...(byproductOutputTons !== undefined ? { byproduct_output_tons: byproductOutputTons } : {}),
+    ...(calculatedRecovery !== undefined ? { actual_recovery_rate_pct: calculatedRecovery } : {}),
+    ...(calculatedRunningHours !== undefined ? { running_hours: calculatedRunningHours } : {}),
+    ...(calculatedCapacity !== undefined ? { actual_capacity_tph: calculatedCapacity } : {}),
+    ...(breakdown ? { downtime_breakdown: breakdown as unknown as Database['public']['Tables']['production_shifts']['Update']['downtime_breakdown'] } : {}),
     updated_at: new Date().toISOString(),
   };
+
+  delete (updatePayload as Record<string, unknown>).end_date;
+  delete (updatePayload as Record<string, unknown>).status;
 
   const { data, error } = await supabase
     .from('production_shifts')
     .update(updatePayload)
     .eq('id', id)
     .select(
-      'id, shift_code, line_id, shift_date, shift_number, standard_shift_hours, total_downtime_hours, running_hours, raw_material_input_tons, product_output_tons, byproduct_output_tons, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct, operator_employee_id, status, verified_by, notes, materials_consumption, products_output, downtime_breakdown, created_at, updated_at',
+      'id, shift_code, line_id, shift_date, shift_number, standard_shift_hours, total_downtime_hours, running_hours, raw_material_input_tons, product_output_tons, byproduct_output_tons, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct, operator_employee_id, notes, materials_consumption, products_output, downtime_breakdown, created_at, updated_at',
     )
     .single();
 
   if (error) throw error;
 
   // Re-sync downtime records if breakdown is updated
-  const breakdown = values.downtime_breakdown;
   if (breakdown && values.line_id && values.shift_date) {
-    await syncShiftDowntimeRecords(id, values.line_id, values.shift_date, breakdown);
+    await syncShiftDowntimeRecords(id, values.line_id, values.shift_date, breakdown as unknown as ShiftDowntimeBreakdown);
   }
 
   return data as unknown as ProductionShift;
 }
 
 
-export async function verifyProductionShift(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('production_shifts')
-    .update({
-      status: 'verified',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id);
-
-  if (error) throw error;
-}
 
 export async function deleteProductionShift(id: string): Promise<void> {
   // Clean up child tables to prevent foreign key restrict errors
@@ -1751,8 +1848,20 @@ export async function fetchProductionMetrics(
   params?: ProductionMetricsFilterParams,
 ): Promise<ProductionMetrics> {
   const now = new Date();
-  const currentYear = params?.year ? Number(params.year) : now.getFullYear();
-  const currentMonth = params?.month ? Number(params.month) : now.getMonth() + 1;
+  const selectedYears: number[] =
+    Array.isArray(params?.years)
+      ? params.years.map(Number)
+      : params?.year !== undefined
+        ? (Number(params.year) === 0 ? [] : [Number(params.year)])
+        : [now.getFullYear()];
+
+  const selectedMonths: number[] =
+    Array.isArray(params?.months)
+      ? params.months.map(Number)
+      : params?.month !== undefined
+        ? (Number(params.month) === 0 ? [] : [Number(params.month)])
+        : [];
+
   const lineId = params?.lineId;
   const isLineFiltered = Boolean(lineId && lineId !== 'all');
 
@@ -1772,11 +1881,15 @@ export async function fetchProductionMetrics(
   let plansQuery = supabase
     .from('production_monthly_plans')
     .select(
-      'id, line_id, planned_output_product_tons, planned_input_material_tons, planned_recovery_rate_pct, planned_operating_hours, planned_breakdown_hours, planned_maintenance_hours, planned_shutdown_hours, planned_capacity_tph, target_quality_rate_pct, status',
-    )
-    .eq('year', currentYear)
-    .eq('month', currentMonth);
+      'id, line_id, year, month, planned_output_product_tons, planned_input_material_tons, planned_recovery_rate_pct, planned_operating_hours, planned_breakdown_hours, planned_maintenance_hours, planned_shutdown_hours, planned_capacity_tph, target_quality_rate_pct, status',
+    );
 
+  if (selectedYears.length > 0) {
+    plansQuery = plansQuery.in('year', selectedYears);
+  }
+  if (selectedMonths.length > 0) {
+    plansQuery = plansQuery.in('month', selectedMonths);
+  }
   if (lineId && lineId !== 'all') {
     plansQuery = plansQuery.eq('line_id', lineId);
   }
@@ -1853,48 +1966,55 @@ export async function fetchProductionMetrics(
     .select('id', { count: 'exact', head: true })
     .in('status', ['scheduled', 'released', 'in_progress']);
 
-  // Shifts data for requested year & month
-  const monthStartStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
-  const nextMonthYear = currentMonth === 12 ? currentYear + 1 : currentYear;
-  const nextMonthNum = currentMonth === 12 ? 1 : currentMonth + 1;
-  const monthEndStr = `${nextMonthYear}-${String(nextMonthNum).padStart(2, '0')}-01`;
-
+  // Shifts data query
   let shiftsQuery = supabase
     .from('production_shifts')
     .select(
-      'id, line_id, shift_date, product_output_tons, raw_material_input_tons, byproduct_output_tons, total_downtime_hours, running_hours, standard_shift_hours, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct, materials_consumption, products_output',
+      'id, line_id, shift_date, product_output_tons, raw_material_input_tons, byproduct_output_tons, total_downtime_hours, running_hours, standard_shift_hours, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct, materials_consumption, products_output, downtime_breakdown',
     )
-    .gte('shift_date', monthStartStr)
-    .lt('shift_date', monthEndStr)
     .order('shift_date', { ascending: false });
 
   if (lineId && lineId !== 'all') {
     shiftsQuery = shiftsQuery.eq('line_id', lineId);
   }
 
-  const { data: shiftsData } = await shiftsQuery;
+  if (selectedYears.length > 0) {
+    const minYear = Math.min(...selectedYears);
+    const maxYear = Math.max(...selectedYears);
+    shiftsQuery = shiftsQuery
+      .gte('shift_date', `${minYear}-01-01`)
+      .lte('shift_date', `${maxYear}-12-31`);
+  }
 
-  const shifts = shiftsData || [];
+  const { data: rawShiftsData } = await shiftsQuery;
+
+  // Precise in-memory filter for selected months and years
+  const shifts = (rawShiftsData || []).filter((s) => {
+    if (!s.shift_date) return false;
+    const parts = s.shift_date.split('-');
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    const matchYear = selectedYears.length === 0 || selectedYears.includes(y);
+    const matchMonth = selectedMonths.length === 0 || selectedMonths.includes(m);
+    return matchYear && matchMonth;
+  });
   const hasShiftData = shifts.length > 0;
 
+  // 1. Thẻ sản lượng: chỉ tính thành phẩm (loại trừ phụ phẩm, bán thành phẩm MM/Magmin/VFS/FSAP)
   const actualMonthlyOutputTons = shifts.reduce((sum, s) => {
-    const direct = Number(s.product_output_tons || 0);
-    if (direct > 0) return sum + direct;
-    if (Array.isArray(s.products_output)) {
+    if (Array.isArray(s.products_output) && s.products_output.length > 0) {
       const prodsList = s.products_output as Array<{
         product_sku?: string;
         product_name?: string;
+        product_type?: string;
         quantity_tons?: number;
       }>;
-      const prodsSum = prodsList.reduce((acc, p) => {
-        const sku = (p.product_sku || '').toLowerCase();
-        const name = (p.product_name || '').toLowerCase();
-        const isByproduct = sku.includes('mm') || sku.includes('magmin') || name.includes('phụ phẩm');
-        return !isByproduct ? acc + (Number(p.quantity_tons) || 0) : acc;
+      const finishedSum = prodsList.reduce((acc, p) => {
+        return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
       }, 0);
-      return sum + (prodsSum > 0 ? prodsSum : prodsList.reduce((acc, p) => acc + (Number(p.quantity_tons) || 0), 0));
+      return sum + finishedSum;
     }
-    return sum;
+    return sum + Number(s.product_output_tons || 0);
   }, 0);
 
   const actualRawMaterialInputTons = shifts.reduce((sum, s) => {
@@ -1923,6 +2043,34 @@ export async function fetchProductionMetrics(
     0,
   );
 
+  // Helper tính thời gian sự cố từ downtime_breakdown
+  const getShiftIncidentHours = (s: { downtime_breakdown?: unknown }): number => {
+    const breakdown = s.downtime_breakdown;
+    if (!breakdown || typeof breakdown !== 'object') return 0;
+    const bd = breakdown as Record<string, unknown>;
+    if (bd.incident_hours !== undefined && bd.incident_hours !== null) {
+      return Number(bd.incident_hours) || 0;
+    }
+    if (Array.isArray(bd.events)) {
+      return (
+        bd.events as Array<{
+          type?: string;
+          duration_minutes?: number;
+          duration_hours?: number;
+        }>
+      ).reduce((sum: number, ev) => {
+        if (ev.type === 'breakdown_incident') {
+          const mins = Number(ev.duration_minutes) || (Number(ev.duration_hours) || 0) * 60;
+          return sum + mins / 60;
+        }
+        return sum;
+      }, 0);
+    }
+    return 0;
+  };
+
+  const totalIncidentHours = shifts.reduce((sum, s) => sum + getShiftIncidentHours(s), 0);
+
   const avgCapacityTph =
     shifts.length > 0
       ? Number(
@@ -1933,29 +2081,19 @@ export async function fetchProductionMetrics(
                   ? Number(s.running_hours)
                   : Math.max(0, Number(s.standard_shift_hours || 8) - Number(s.total_downtime_hours || 0));
               const rawTons = Number(s.raw_material_input_tons || 0);
+              if (runHours > 0 && rawTons > 0) return sum + (rawTons / runHours);
               const cap = Number(s.actual_capacity_tph || 0);
               if (cap > 0) return sum + cap;
-              if (runHours > 0 && rawTons > 0) return sum + (rawTons / runHours);
               return sum;
             }, 0) / shifts.length
           ).toFixed(2),
         )
       : 0;
 
+  // 2. Thẻ tỉ lệ thu hồi: chỉ tính thành phẩm / nguyên liệu
   const avgRecoveryRatePct =
-    shifts.length > 0
-      ? Number(
-          (
-            shifts.reduce((sum, s) => {
-              const rec = Number(s.actual_recovery_rate_pct || 0);
-              if (rec > 0) return sum + rec;
-              const prod = Number(s.product_output_tons || 0);
-              const raw = Number(s.raw_material_input_tons || 0);
-              if (raw > 0 && prod > 0) return sum + ((prod / raw) * 100);
-              return sum;
-            }, 0) / shifts.length
-          ).toFixed(2),
-        )
+    actualRawMaterialInputTons > 0 && actualMonthlyOutputTons > 0
+      ? Number(((actualMonthlyOutputTons / actualRawMaterialInputTons) * 100).toFixed(2))
       : 0;
 
   // Computed percentages
@@ -1969,18 +2107,31 @@ export async function fetchProductionMetrics(
       ? Number((avgRecoveryRatePct - plannedRecoveryRatePct).toFixed(1))
       : 0;
 
-  const totalShiftHours = actualOperatingHours + totalDowntimeHours;
+  // 3. Chỉ số A trong OEE: thời gian vận hành / (thời gian vận hành + thời gian sự cố)
+  const totalAvailabilityHours = actualOperatingHours + totalIncidentHours;
   const availabilityPct =
-    totalShiftHours > 0
-      ? Number(((actualOperatingHours / totalShiftHours) * 100).toFixed(1))
+    totalAvailabilityHours > 0
+      ? Number(((actualOperatingHours / totalAvailabilityHours) * 100).toFixed(1))
+      : (actualOperatingHours > 0 ? 100 : 0);
+
+  const availabilityScore = hasShiftData ? Math.min(100, Math.max(0, availabilityPct)) : 0;
+
+  // 4. Chỉ số P trong OEE: (sản lượng thành phẩm thực tế/ thời gian vận hành thực tế)/(sản lượng vận hành kế hoạch/thời gian vận hành kế hoạch)
+  const actualProductivityTph =
+    actualOperatingHours > 0 && actualMonthlyOutputTons > 0
+      ? actualMonthlyOutputTons / actualOperatingHours
       : 0;
 
-  // OEE Scores (0 - 100%): When no shift data exists, all scores are strictly 0
-  const availabilityScore = hasShiftData ? Math.min(100, Math.max(0, availabilityPct)) : 0;
+  const plannedProductivityTph =
+    plannedOperatingHours > 0 && monthlyPlannedOutputTons > 0
+      ? monthlyPlannedOutputTons / plannedOperatingHours
+      : (plannedCapacityTph > 0 ? plannedCapacityTph * (plannedRecoveryRatePct / 100) : 60.0);
+
   const performanceScore =
-    hasShiftData && plannedCapacityTph > 0 && avgCapacityTph > 0
-      ? Math.min(100, Number(((avgCapacityTph / plannedCapacityTph) * 100).toFixed(1)))
+    hasShiftData && plannedProductivityTph > 0 && actualProductivityTph > 0
+      ? Math.min(100, Number(((actualProductivityTph / plannedProductivityTph) * 100).toFixed(1)))
       : 0;
+
   const avgShiftQualityRatePct =
     shifts.length > 0
       ? Number(
@@ -2177,6 +2328,7 @@ export async function fetchProductionMetrics(
     actualDowntimeHours: Number(totalDowntimeHours.toFixed(1)),
     availabilityPct,
     plannedCapacityTph,
+    plannedProductivityTph: Number(plannedProductivityTph.toFixed(2)),
     avgCapacityTph,
     targetQualityRatePct,
     availabilityScore,

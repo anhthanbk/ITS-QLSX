@@ -3,13 +3,12 @@ import {
   X,
   Clock,
   AlertTriangle,
-  CheckCircle2,
   Trash2,
   Award,
+  Plus,
 } from 'lucide-react';
-import type { ProductionShift } from '../types';
+import { type ProductionShift, isFinishedProduct } from '../types';
 import { useProductionShiftDetail } from '../hooks/use-production-shifts';
-import { ShiftStatusBadge } from './production-status-badge';
 import { ProductionShiftDowntimeDialog } from './production-shift-downtime-dialog';
 import { useCreateShiftDowntime } from '../hooks/use-production-shifts';
 import { cn } from '@/lib/utils';
@@ -18,9 +17,7 @@ interface ProductionShiftDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   shift: ProductionShift | null;
-  onVerify?: (shift: ProductionShift) => void;
   onDelete?: (shift: ProductionShift) => void;
-  canVerify?: boolean;
   canManage?: boolean;
   canDelete?: boolean;
 }
@@ -31,9 +28,7 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
   isOpen,
   onClose,
   shift,
-  onVerify,
   onDelete,
-  canVerify,
   canManage,
   canDelete = false,
 }) => {
@@ -44,6 +39,50 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
   const createDowntimeMutation = useCreateShiftDowntime();
 
   if (!isOpen || !shift) return null;
+
+  const runHours = Number(
+    (
+      shift.running_hours ??
+      Math.max(0, shift.standard_shift_hours - shift.total_downtime_hours)
+    ).toFixed(1),
+  );
+
+  const rawInput = (() => {
+    const direct = Number(shift.raw_material_input_tons || 0);
+    if (direct > 0) return direct;
+    const mats = Array.isArray(shift.materials_consumption) ? shift.materials_consumption : [];
+    const m = mats.find((item) => {
+      const name = (item.resource_name || '').toLowerCase();
+      return (
+        item.category === 'material' ||
+        name.includes('cát nguyên khai') ||
+        name.includes('quặng') ||
+        name.includes('nguyên khai')
+      );
+    });
+    return Number(m?.actual_quantity) || 0;
+  })();
+
+  const finishedOutput = (() => {
+    if (Array.isArray(shift.products_output) && shift.products_output.length > 0) {
+      return shift.products_output.reduce((acc, p) => {
+        return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+      }, 0);
+    }
+    return Number(shift.product_output_tons || 0);
+  })();
+
+  // Công suất = Nguyên liệu cấp / Giờ chạy (TPH)
+  const actualCapacity =
+    runHours > 0 && rawInput > 0
+      ? Number((rawInput / runHours).toFixed(1))
+      : (shift.actual_capacity_tph && Number(shift.actual_capacity_tph) > 0 ? Number(shift.actual_capacity_tph) : '---');
+
+  // Thu hồi = Thành phẩm / Nguyên liệu * 100% (chỉ tính thành phẩm)
+  const actualRecovery =
+    rawInput > 0 && finishedOutput > 0
+      ? Number(((finishedOutput / rawInput) * 100).toFixed(2))
+      : (shift.actual_recovery_rate_pct && Number(shift.actual_recovery_rate_pct) > 0 ? Number(shift.actual_recovery_rate_pct) : 0);
 
   return (
     <>
@@ -58,12 +97,24 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-bold text-foreground">{shift.shift_code}</h2>
-                  <ShiftStatusBadge status={shift.status} />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Ngày {shift.shift_date} • Ca {shift.shift_number} • {shift.line_name} (
-                  {shift.line_code}) • Vận hành: {shift.operator_name || '---'}
-                </p>
+                {(() => {
+                  const isRange = Boolean(
+                    shift.end_date ||
+                    shift.shift_code?.startsWith('KY-') ||
+                    shift.downtime_breakdown?.is_date_range
+                  );
+                  const toDate = shift.end_date || shift.downtime_breakdown?.to_date;
+
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      {isRange
+                        ? `Kỳ từ ${shift.shift_date}${toDate && toDate !== shift.shift_date ? ` đến ${toDate}` : ''} (${shift.standard_shift_hours || 24}h tiêu chuẩn)`
+                        : `Ngày ${shift.shift_date} • Ca ${shift.shift_number}`} • {shift.line_name} (
+                      {shift.line_code}) • Vận hành: {shift.operator_name || '---'}
+                    </p>
+                  );
+                })()}
               </div>
             </div>
             <button
@@ -114,8 +165,7 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
                     <span className="text-[11px] text-muted-foreground">Giờ chạy máy thực</span>
                     <div className="mt-1 text-base font-bold text-primary">
-                      {shift.running_hours ?? shift.standard_shift_hours - shift.total_downtime_hours}
-                      h / {shift.standard_shift_hours}h
+                      {runHours}h / {shift.standard_shift_hours}h
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
@@ -127,13 +177,13 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
                     <span className="text-[11px] text-muted-foreground">Công suất vận hành</span>
                     <div className="mt-1 text-base font-bold text-foreground">
-                      {shift.actual_capacity_tph ?? '---'} TPH
+                      {actualCapacity} TPH
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
                     <span className="text-[11px] text-muted-foreground">Tỷ lệ thu hồi cát</span>
                     <div className="mt-1 text-base font-bold text-emerald-600 dark:text-emerald-400">
-                      {shift.actual_recovery_rate_pct}%
+                      {actualRecovery}%
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
@@ -434,28 +484,12 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
           {/* Footer */}
           <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
             <div className="text-xs text-muted-foreground">
-              {shift.status === 'verified' ? (
-                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                  ✓ Ca sản xuất đã được kiểm tra và nghiệm thu
-                </span>
-              ) : (
-                <span>Số liệu ca đang ở trạng thái chốt ca vận hành</span>
-              )}
+              Người cập nhật:{' '}
+              <span className="font-semibold text-foreground">
+                {shift.operator_name || 'Quản trị viên'}
+              </span>
             </div>
             <div className="flex items-center gap-2">
-              {canVerify && shift.status !== 'verified' && onVerify && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onVerify(shift);
-                    onClose();
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  Nghiệm thu ca
-                </button>
-              )}
               {canDelete && onDelete && (
                 <button
                   type="button"
