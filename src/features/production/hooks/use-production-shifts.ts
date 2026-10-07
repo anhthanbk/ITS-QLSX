@@ -4,20 +4,25 @@ import {
   fetchProductionShiftById,
   createProductionShift,
   updateProductionShift,
-  verifyProductionShift,
   deleteProductionShift,
   createShiftDowntime,
-  createShiftMeterReading,
-  createShiftLog,
+  fetchShiftPlanContext,
 } from '../api/production-api';
 import type { ProductionShiftFilterParams } from '../types';
 import type {
   ProductionShiftFormValues,
   ShiftDowntimeFormValues,
-  ShiftMeterFormValues,
-  ShiftLogFormValues,
 } from '../validation/production-schemas';
 import { useToast } from '@/components/feedback/use-toast';
+
+export function useShiftPlanContext(lineId: string, shiftDate: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['shift-plan-context', lineId, shiftDate],
+    queryFn: () => fetchShiftPlanContext(lineId, shiftDate),
+    enabled: enabled && !!lineId && !!shiftDate,
+    staleTime: 60 * 1000,
+  });
+}
 
 export function useProductionShifts(params: ProductionShiftFilterParams) {
   return useQuery({
@@ -72,22 +77,6 @@ export function useUpdateProductionShift() {
   });
 }
 
-export function useVerifyProductionShift() {
-  const queryClient = useQueryClient();
-  const { success, error } = useToast();
-
-  return useMutation({
-    mutationFn: (id: string) => verifyProductionShift(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['production-shifts'] });
-      queryClient.invalidateQueries({ queryKey: ['production-shift-detail'] });
-      success('Số liệu ca sản xuất đã được kiểm tra và xác nhận.', 'Đã xác nhận');
-    },
-    onError: (err: Error) => {
-      error(err.message || 'Không thể xác nhận ca sản xuất.', 'Lỗi xác nhận');
-    },
-  });
-}
 
 export function useDeleteProductionShift() {
   const queryClient = useQueryClient();
@@ -124,34 +113,3 @@ export function useCreateShiftDowntime() {
   });
 }
 
-export function useCreateShiftMeterReading() {
-  const queryClient = useQueryClient();
-  const { success, error } = useToast();
-
-  return useMutation({
-    mutationFn: (values: ShiftMeterFormValues) => createShiftMeterReading(values),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['production-shift-detail', data.shift_id] });
-      success(`Đã cập nhật chỉ số đồng hồ: ${data.meter_name}`, 'Đã lưu chỉ số');
-    },
-    onError: (err: Error) => {
-      error(err.message || 'Không thể lưu chỉ số đồng hồ.', 'Lỗi lưu chỉ số');
-    },
-  });
-}
-
-export function useCreateShiftLog() {
-  const queryClient = useQueryClient();
-  const { success, error } = useToast();
-
-  return useMutation({
-    mutationFn: (values: ShiftLogFormValues) => createShiftLog(values),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['production-shift-detail', data.shift_id] });
-      success('Đã bổ sung mục nhật ký vận hành ca.', 'Đã ghi nhật ký');
-    },
-    onError: (err: Error) => {
-      error(err.message || 'Không thể lưu nhật ký vận hành.', 'Lỗi ghi nhật ký');
-    },
-  });
-}

@@ -112,6 +112,56 @@ export interface TechnoEconomicNorm {
 // 3. Shifts & Operations
 export type ShiftStatus = 'in_progress' | 'completed' | 'verified';
 
+export interface ShiftMaterialConsumption {
+  material_id?: string;
+  resource_name: string;
+  category: 'material' | 'fuel' | 'supply';
+  unit_of_measure: string;
+  planned_norm?: number;
+  actual_quantity: number;
+  notes?: string;
+}
+
+export interface ShiftProductOutput {
+  product_id?: string;
+  product_name: string;
+  product_sku: string;
+  product_type?: string | null;
+  unit_of_measure: string;
+  is_out_of_plan: boolean;
+  quantity_tons: number;
+}
+
+export interface ShiftDowntimeEvent {
+  id?: string;
+  type: 'breakdown_incident' | 'planned_maintenance' | 'scheduled_shutdown';
+  start_time: string; // "HH:mm" e.g. "08:00"
+  end_time: string;   // "HH:mm" e.g. "08:45"
+  duration_minutes?: number;
+  duration_hours: number;
+  incident_category?: string | null;
+  reason?: string | null;
+  action_taken?: string | null;
+}
+
+export interface ShiftDowntimeBreakdown {
+  maintenance_hours: number;
+  maintenance_note?: string | null;
+  incident_hours: number;
+  incident_category?: string | null;
+  incident_reason?: string | null;
+  incident_action?: string | null;
+  planned_shutdown_hours: number;
+  planned_shutdown_reason?: string | null;
+  total_downtime_hours: number;
+  events?: ShiftDowntimeEvent[];
+  is_date_range?: boolean;
+  from_date?: string;
+  to_date?: string;
+  updated_by_name?: string | null;
+  operator_name?: string | null;
+}
+
 export interface ProductionShift {
   id: string;
   shift_code: string;
@@ -119,6 +169,7 @@ export interface ProductionShift {
   line_name?: string;
   line_code?: string;
   shift_date: string;
+  end_date?: string | null;
   shift_number: number;
   standard_shift_hours: number;
   total_downtime_hours: number;
@@ -128,36 +179,16 @@ export interface ProductionShift {
   byproduct_output_tons: number;
   actual_capacity_tph?: number;
   actual_recovery_rate_pct?: number;
+  actual_quality_rate_pct?: number;
   operator_employee_id: string | null;
   operator_name?: string;
-  status: ShiftStatus;
-  verified_by: string | null;
+  status?: ShiftStatus;
   notes: string | null;
+  materials_consumption?: ShiftMaterialConsumption[];
+  products_output?: ShiftProductOutput[];
+  downtime_breakdown?: ShiftDowntimeBreakdown;
   created_at: string;
   updated_at: string;
-}
-
-export type MeterType =
-  | 'input_scale'
-  | 'output_scale'
-  | 'electric_meter'
-  | 'diesel_meter'
-  | 'coal_scale'
-  | 'water_meter'
-  | 'chemical_meter';
-
-export interface ShiftMeterReading {
-  id: string;
-  shift_id: string;
-  meter_code: string;
-  meter_name: string;
-  meter_type: MeterType;
-  start_reading: number;
-  end_reading: number;
-  multiplier: number;
-  consumed_quantity: number;
-  unit_of_measure: string;
-  notes: string | null;
 }
 
 export type DowntimeCategory =
@@ -185,25 +216,6 @@ export interface ShiftDowntime {
   status: DowntimeStatus;
   reported_by_employee_id: string | null;
   reported_by_name?: string;
-  created_at: string;
-}
-
-export type ShiftLogChangeType =
-  | 'process_parameter'
-  | 'equipment_adjustment'
-  | 'feed_ore_variation'
-  | 'safety_notice'
-  | 'management_directive'
-  | 'other';
-
-export interface ShiftLog {
-  id: string;
-  shift_id: string;
-  log_time: string;
-  change_type: ShiftLogChangeType;
-  content: string;
-  changed_by_employee_id: string | null;
-  changed_by_name?: string;
   created_at: string;
 }
 
@@ -335,13 +347,202 @@ export interface PaginatedResult<T> {
   totalPages: number;
 }
 
+export interface ProductionMetricsFilterParams {
+  lineId?: string;
+  year?: number;
+  month?: number;
+  years?: number[];
+  months?: number[];
+}
+
+export interface ConsumptionNormMetric {
+  key: string;
+  resourceName: string;
+  categoryGroup: 'material' | 'fuel' | 'supply';
+  unit: string;
+  plannedNorm: number;
+  actualNorm: number;
+  variancePct: number;
+  plannedTotal?: number;
+  actualTotal?: number;
+  status: 'better' | 'worse' | 'neutral' | 'no_data';
+}
+
 export interface ProductionMetrics {
   totalMonthlyPlans: number;
   activeLines: number;
+  // 1. Output Actual vs Planned
   monthlyPlannedOutputTons: number;
   actualMonthlyOutputTons: number;
-  avgCapacityTph: number;
+  outputProgressPct: number;
+  // 2. Techno-Economic Norms Actual vs Planned
+  plannedRecoveryRatePct: number;
   avgRecoveryRatePct: number;
+  recoveryVariancePct: number;
+  // 3. Operating & Downtime Actual vs Planned
+  plannedOperatingHours: number;
+  actualOperatingHours: number;
+  plannedDowntimeHours: number;
+  actualDowntimeHours: number;
+  availabilityPct: number;
+  // 4. OEE & Breakdown
+  plannedCapacityTph: number;
+  plannedProductivityTph?: number;
+  avgCapacityTph: number;
+  targetQualityRatePct: number;
+  availabilityScore: number;
+  performanceScore: number;
+  qualityScore: number;
+  oeePct: number;
+  // Legacy compatibility fields
   totalDowntimeHours: number;
   activeOrdersCount: number;
+  // Consumption norms vs actuals comparison row
+  consumptionNorms?: ConsumptionNormMetric[];
 }
+
+// ==========================================
+// 6. ANNUAL PRODUCTION PLANNING (LẬP KẾ HOẠCH SẢN XUẤT NĂM)
+// ==========================================
+
+export type MaterialCategoryGroup = 'material' | 'fuel' | 'supply';
+
+export type PlanProductClassification = 'finished_good' | 'semi_finished' | 'by_product';
+
+export interface AnnualPlanProductRow {
+  productId: string;
+  productName: string;
+  productSku: string;
+  productType?: PlanProductClassification | string;
+  unitOfMeasure: string;
+  // Monthly planned quantity: month 1..12 -> number (tấn)
+  months: Record<number, number>;
+}
+
+export interface AnnualPlanMaterialRow {
+  materialId: string;
+  materialName: string;
+  materialCode: string;
+  category: string;
+  categoryGroup: MaterialCategoryGroup;
+  unitOfMeasure: string;
+  // Monthly planned quantity: month 1..12 -> number
+  months: Record<number, number>;
+}
+
+export interface AnnualPlanTimeMonth {
+  month: number;
+  calendarHours: number; // Tự tính: số ngày trong tháng * 24
+  maintenanceHours: number; // Giờ bảo trì
+  incidentHours: number; // Giờ sự cố
+  plannedShutdownHours: number; // Giờ nghỉ trong kế hoạch
+  operatingHours: number; // Giờ vận hành = calendarHours - (maintenanceHours + incidentHours + plannedShutdownHours)
+}
+
+export interface AnnualPlanMonthKPI {
+  month: number;
+  // 1. Công suất: nguyên liệu / giờ vận hành (tấn/giờ)
+  capacityTph: number;
+  // 2. Năng suất: tổng THÀNH PHẨM / giờ vận hành (tấn/giờ) - chỉ tính thành phẩm
+  productivityTph: number;
+  // 3. Tỷ lệ thu hồi thành phẩm từ nguyên liệu: tổng thành phẩm / nguyên liệu * 100%
+  recoveryPct: number;
+  // 4. Tỷ lệ thu hồi phụ phẩm từ nguyên liệu: tổng phụ phẩm / nguyên liệu * 100%
+  byproductRecoveryPct: number;
+  // 5. Định mức tiêu hao điện: tiêu hao điện (kWh) / tổng thành phẩm
+  electricityNorm: number;
+  recoveryFormula?: number; // Tùy chọn cũ
+  // 6. % giờ đối với tổng giờ tháng
+  pctOperatingHours: number;
+  pctMaintenanceHours: number;
+  pctIncidentHours: number;
+  pctShutdownHours: number;
+  // 7. Định mức KT-KT: tính theo tổng THÀNH PHẨM
+  rawMaterialNorm: number; // nguyên liệu / thành phẩm
+  fuelNorm: number;        // tiêu hao nhiên liệu / thành phẩm
+  supplyNorm: number;      // tiêu hao vật tư / thành phẩm
+}
+
+export function normalizeProductType(type?: string | null): PlanProductClassification {
+  if (!type) return 'finished_good';
+  const lower = type.toLowerCase().trim();
+  if (
+    lower === 'by_product' ||
+    lower === 'byproduct' ||
+    lower === 'phụ phẩm' ||
+    lower.includes('by_product') ||
+    lower.includes('phụ phẩm')
+  ) {
+    return 'by_product';
+  }
+  if (
+    lower === 'semi_finished' ||
+    lower === 'semifinished' ||
+    lower === 'bán thành phẩm' ||
+    lower.includes('semi_finished') ||
+    lower.includes('bán thành')
+  ) {
+    return 'semi_finished';
+  }
+  return 'finished_good';
+}
+
+/**
+ * Kiểm tra xem một sản phẩm có phải là sản phẩm / thành phẩm chính hay không.
+ * Loại trừ hoàn toàn phụ phẩm, bán thành phẩm (MM, Magmin, VFS, FSAP, v.v.).
+ */
+export function isFinishedProduct(item?: {
+  product_sku?: string | null;
+  product_name?: string | null;
+  product_type?: string | null;
+}): boolean {
+  if (!item) return false;
+
+  if (item.product_type) {
+    const norm = normalizeProductType(item.product_type);
+    if (norm === 'by_product' || norm === 'semi_finished') {
+      return false;
+    }
+    if (norm === 'finished_good') {
+      return true;
+    }
+  }
+
+  const sku = (item.product_sku || '').trim().toLowerCase();
+  const name = (item.product_name || '').trim().toLowerCase();
+
+  // Danh mục phụ phẩm thực tế tại nhà máy: MM, MAGMIN, VFS, FSAP
+  if (
+    sku === 'mm' ||
+    sku === 'magmin' ||
+    sku === 'vfs' ||
+    sku === 'fsap' ||
+    sku.startsWith('mm-') ||
+    sku.endsWith('-mm') ||
+    sku.includes('magmin') ||
+    sku.includes('vfs') ||
+    sku.includes('fsap') ||
+    name.includes('phụ phẩm') ||
+    name.includes('bán thành phẩm') ||
+    name.includes('sau chế biến') ||
+    name.includes('magmin') ||
+    name.includes('vfs') ||
+    name.includes('fsap')
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+export interface AnnualPlanData {
+  year: number;
+  lineId: string;
+  lineName?: string;
+  status: PlanStatus;
+  products: AnnualPlanProductRow[];
+  materials: AnnualPlanMaterialRow[];
+  timePlan: Record<number, AnnualPlanTimeMonth>;
+  targetQualityPct: Record<number, number>; // Month 1..12 -> %
+}
+

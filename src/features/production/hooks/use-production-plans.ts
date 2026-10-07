@@ -2,15 +2,21 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchProductionPlans,
   fetchProductionPlanById,
-  fetchAnnualPlanSummary,
+  fetchAnnualProductionPlan,
+  saveAnnualProductionPlan,
+  approveAnnualProductionPlan,
+  deleteAnnualProductionPlan,
   createProductionPlan,
   updateProductionPlan,
   approveProductionPlan,
   deleteProductionPlan,
 } from '../api/production-api';
-import type { ProductionPlanFilterParams } from '../types';
+import type { ProductionPlanFilterParams, AnnualPlanData } from '../types';
 import type { ProductionPlanFormValues } from '../validation/production-schemas';
 import { useToast } from '@/components/feedback/use-toast';
+
+/** Query key prefix for the multi-line (aggregate) annual plan view. */
+export const ALL_LINES_PLAN_KEY = 'annual-plans-all-lines-full';
 
 export function useProductionPlans(params: ProductionPlanFilterParams) {
   return useQuery({
@@ -99,11 +105,77 @@ export function useDeleteProductionPlan() {
   });
 }
 
-export function useAnnualPlanSummary(year: number, lineId: string) {
+export function useAnnualProductionPlan(year: number, lineId: string) {
   return useQuery({
-    queryKey: ['annual-plan-summary', year, lineId],
-    queryFn: () => fetchAnnualPlanSummary(year, lineId),
+    queryKey: ['annual-production-plan', year, lineId],
+    queryFn: () => fetchAnnualProductionPlan(year, lineId),
     enabled: !!lineId && year > 0,
     staleTime: 60 * 1000,
   });
 }
+
+export function useSaveAnnualProductionPlan() {
+  const queryClient = useQueryClient();
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: (planData: AnnualPlanData) => saveAnnualProductionPlan(planData),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ['annual-production-plan', variables.year, variables.lineId],
+      });
+      queryClient.invalidateQueries({ queryKey: [ALL_LINES_PLAN_KEY, variables.year] });
+      queryClient.invalidateQueries({ queryKey: ['production-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['production-metrics'] });
+      success(`Đã lưu kế hoạch sản xuất năm ${variables.year} thành công.`, 'Thành công');
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Không thể lưu kế hoạch sản xuất năm.', 'Lỗi lưu kế hoạch');
+    },
+  });
+}
+
+export function useApproveAnnualProductionPlan() {
+  const queryClient = useQueryClient();
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: ({ year, lineId }: { year: number; lineId: string }) =>
+      approveAnnualProductionPlan(year, lineId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ['annual-production-plan', variables.year, variables.lineId],
+      });
+      queryClient.invalidateQueries({ queryKey: [ALL_LINES_PLAN_KEY, variables.year] });
+      queryClient.invalidateQueries({ queryKey: ['production-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['production-metrics'] });
+      success(`Kế hoạch sản xuất năm ${variables.year} đã được phê duyệt.`, 'Thành công');
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Không thể phê duyệt kế hoạch sản xuất năm.', 'Lỗi phê duyệt');
+    },
+  });
+}
+
+export function useDeleteAnnualProductionPlan() {
+  const queryClient = useQueryClient();
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: ({ year, lineId }: { year: number; lineId: string }) =>
+      deleteAnnualProductionPlan(year, lineId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ['annual-production-plan', variables.year, variables.lineId],
+      });
+      queryClient.invalidateQueries({ queryKey: [ALL_LINES_PLAN_KEY, variables.year] });
+      queryClient.invalidateQueries({ queryKey: ['production-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['production-metrics'] });
+      success(`Đã xóa toàn bộ kế hoạch sản xuất năm ${variables.year} thành công.`, 'Thành công');
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Không thể xóa kế hoạch sản xuất năm.', 'Lỗi xóa kế hoạch');
+    },
+  });
+}
+

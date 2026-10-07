@@ -77,13 +77,22 @@ export const AppRoutes: React.FC = () => {
           {/* 2. Sản Xuất (Production) */}
           <Route
             path="/production"
-            element={<Navigate to="/production/plans" replace />}
+            element={<Navigate to="/production/annual-plan" replace />}
           />
-          <Route path="/production/plans" element={<ProductionPage />} />
-          <Route path="/production/annual-summary" element={<ProductionPage />} />
+          <Route
+            path="/production/plans"
+            element={<Navigate to="/production/annual-plan" replace />}
+          />
+          <Route path="/production/annual-plan" element={<ProductionPage />} />
           <Route path="/production/shifts" element={<ProductionPage />} />
-          <Route path="/production/norms" element={<ProductionPage />} />
-          <Route path="/production/batches" element={<ProductionPage />} />
+          <Route
+            path="/production/norms"
+            element={<Navigate to="/production/annual-plan" replace />}
+          />
+          <Route
+            path="/production/batches"
+            element={<Navigate to="/production/annual-plan" replace />}
+          />
 
           {/* 3. Kho - Vật Tư (Warehouse) */}
           <Route

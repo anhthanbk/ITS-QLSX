@@ -1,12 +1,12 @@
 import React from 'react';
-import { Search, RotateCcw, Plus } from 'lucide-react';
+import { Search, RotateCcw, Plus, CalendarRange } from 'lucide-react';
 import type { ShiftStatus, ProductionLine } from '../types';
 
 interface ProductionShiftFilterBarProps {
   search: string;
   onSearchChange: (value: string) => void;
-  status: ShiftStatus | 'all';
-  onStatusChange: (value: ShiftStatus | 'all') => void;
+  status?: ShiftStatus | 'all';
+  onStatusChange?: (value: ShiftStatus | 'all') => void;
   lineId: string | 'all';
   onLineIdChange: (value: string | 'all') => void;
   shiftNumber: number | 'all';
@@ -18,14 +18,15 @@ interface ProductionShiftFilterBarProps {
   lines: ProductionLine[];
   onReset: () => void;
   onCreate?: () => void;
+  onCreateRange?: () => void;
   canManage: boolean;
 }
 
 export const ProductionShiftFilterBar: React.FC<ProductionShiftFilterBarProps> = ({
   search,
   onSearchChange,
-  status,
-  onStatusChange,
+  status: _status,
+  onStatusChange: _onStatusChange,
   lineId,
   onLineIdChange,
   shiftNumber,
@@ -37,6 +38,7 @@ export const ProductionShiftFilterBar: React.FC<ProductionShiftFilterBarProps> =
   lines,
   onReset,
   onCreate,
+  onCreateRange,
   canManage,
 }) => {
   return (
@@ -54,16 +56,31 @@ export const ProductionShiftFilterBar: React.FC<ProductionShiftFilterBarProps> =
           />
         </div>
 
-        {/* Action Button */}
-        {canManage && onCreate && (
-          <button
-            type="button"
-            onClick={onCreate}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
-          >
-            <Plus className="h-4 w-4" />
-            Ghi nhận ca sản xuất
-          </button>
+        {/* Action Buttons */}
+        {canManage && (
+          <div className="flex flex-wrap items-center gap-2">
+            {onCreateRange && (
+              <button
+                type="button"
+                onClick={onCreateRange}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3.5 py-2 text-sm font-semibold text-primary shadow-xs hover:bg-primary/20 transition-colors"
+                title="Ghi nhận sản lượng và tiêu hao tổng hợp theo khoảng ngày tùy chọn"
+              >
+                <CalendarRange className="h-4 w-4" />
+                Nhập từ ngày đến ngày
+              </button>
+            )}
+            {onCreate && (
+              <button
+                type="button"
+                onClick={onCreate}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Ghi nhận ca sản xuất
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -97,19 +114,6 @@ export const ProductionShiftFilterBar: React.FC<ProductionShiftFilterBarProps> =
           <option value={1}>Ca 1 (06:00 - 14:00)</option>
           <option value={2}>Ca 2 (14:00 - 22:00)</option>
           <option value={3}>Ca 3 (22:00 - 06:00)</option>
-        </select>
-
-        {/* Status select */}
-        <select
-          value={status}
-          onChange={(e) => onStatusChange(e.target.value as ShiftStatus | 'all')}
-          aria-label="Trạng thái ca"
-          className="rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          <option value="all">Tất cả trạng thái</option>
-          <option value="in_progress">Đang vận hành</option>
-          <option value="completed">Đã chốt ca</option>
-          <option value="verified">Đã nghiệm thu</option>
         </select>
 
         {/* From Date */}

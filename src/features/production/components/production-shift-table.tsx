@@ -1,7 +1,8 @@
 import React from 'react';
-import { Eye, Edit, Trash2, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Eye, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ProductionShift } from '../types';
-import { ShiftStatusBadge } from './production-status-badge';
+import { isFinishedProduct } from '../types';
+import { cn } from '@/lib/utils';
 
 interface ProductionShiftTableProps {
   data: ProductionShift[];
@@ -13,9 +14,10 @@ interface ProductionShiftTableProps {
   onView: (shift: ProductionShift) => void;
   onEdit: (shift: ProductionShift) => void;
   onDelete: (shift: ProductionShift) => void;
-  onVerify?: (shift: ProductionShift) => void;
   canManage: boolean;
-  canVerify: boolean;
+  canDelete?: boolean;
+  plannedProductivityTph?: number;
+  plannedRecoveryRatePct?: number;
 }
 
 export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
@@ -28,9 +30,10 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
   onView,
   onEdit,
   onDelete,
-  onVerify,
   canManage,
-  canVerify,
+  canDelete = false,
+  plannedProductivityTph,
+  plannedRecoveryRatePct,
 }) => {
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
 
@@ -56,106 +59,327 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
     );
   }
 
+  // Target planned benchmarks per shift
+  const TARGET_CAPACITY_TPH = 70.0; // 70 tấn quặng/h
+  const TARGET_PRODUCTIVITY_TPH = 50.0; // ~50 TPH thành phẩm/h chuẩn
+  const TARGET_RECOVERY_PCT = 84.19; // 84.19% thu hồi chuẩn
+  const TARGET_OUTPUT_TONS = 400.0; // ~400 tấn TP chuẩn / ca
+  const TARGET_OEE_PCT = 80.0; // 80% OEE chuẩn
+
+  const renderMetricCell = (
+    value: string | number,
+    unit: string,
+    isMet: boolean,
+  ) => (
+    <div className="flex items-center justify-center">
+      <span
+        className={cn(
+          'text-xs tracking-tight transition-colors',
+          isMet
+            ? 'font-bold text-emerald-600 dark:text-emerald-400'
+            : 'font-semibold text-foreground',
+        )}
+      >
+        {value}{unit ? ` ${unit}` : ''}
+      </span>
+    </div>
+  );
+
   return (
     <div className="flex flex-col rounded-xl border border-border bg-card shadow-sm">
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
+        <table className="w-full text-left text-xs border-collapse">
           <thead className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
             <tr>
-              <th className="px-4 py-3">Mã ca</th>
-              <th className="px-4 py-3">Ngày & Ca</th>
-              <th className="px-4 py-3">Dây chuyền</th>
-              <th className="px-4 py-3 text-right">Giờ chạy / Dừng</th>
-              <th className="px-4 py-3 text-right">Quặng cấp (Tấn)</th>
-              <th className="px-4 py-3 text-right">Thành phẩm (Tấn)</th>
-              <th className="px-4 py-3 text-right">Công suất (TPH)</th>
-              <th className="px-4 py-3 text-right">Thu hồi (%)</th>
-              <th className="px-4 py-3">Trưởng ca</th>
-              <th className="px-4 py-3 text-center">Trạng thái</th>
-              <th className="px-4 py-3 text-center">Thao tác</th>
+              <th className="px-3 py-3">Ngày & Ca</th>
+              <th className="px-3 py-3 text-center">Mã Line</th>
+              <th className="px-3 py-3 text-center">Thời gian vận hành</th>
+              <th className="px-3 py-3 text-center">Công suất</th>
+              <th className="px-3 py-3 text-center">Năng suất</th>
+              <th className="px-3 py-3 text-center">Thu hồi</th>
+              <th className="px-3 py-3 text-center">Sản lượng</th>
+              <th className="px-3 py-3 text-center">OEE</th>
+              <th className="px-3 py-3">Người cập nhật</th>
+              <th className="px-3 py-3 text-center w-24">Thao tác</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border text-foreground">
-            {data.map((shift) => (
-              <tr key={shift.id} className="transition-colors hover:bg-muted/30">
-                <td className="px-4 py-3 font-semibold text-primary">{shift.shift_code}</td>
-                <td className="px-4 py-3">
-                  <div className="font-medium">{shift.shift_date}</div>
-                  <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                    Ca {shift.shift_number}
-                  </span>
-                </td>
-                <td className="px-4 py-3 font-medium">{shift.line_name || '---'}</td>
-                <td className="px-4 py-3 text-right">
-                  <span className="font-semibold text-foreground">
-                    {shift.running_hours ?? shift.standard_shift_hours - shift.total_downtime_hours}
-                    h
-                  </span>
-                  <span className="text-[11px] text-rose-500">
-                    {' '}
-                    ({shift.total_downtime_hours}h dừng)
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-right font-medium">
-                  {shift.raw_material_input_tons.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                  {shift.product_output_tons.toLocaleString()}
-                </td>
-                <td className="px-4 py-3 text-right font-medium">
-                  {shift.actual_capacity_tph ?? '---'}
-                </td>
-                <td className="px-4 py-3 text-right font-medium">
-                  {shift.actual_recovery_rate_pct ? `${shift.actual_recovery_rate_pct}%` : '---'}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{shift.operator_name || '---'}</td>
-                <td className="px-4 py-3 text-center">
-                  <ShiftStatusBadge status={shift.status} />
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <div className="flex items-center justify-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => onView(shift)}
-                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      title="Xem chi tiết ca"
+          <tbody className="divide-y border-border text-foreground">
+            {data.map((shift) => {
+              const targetOperatingHours = Number(shift.standard_shift_hours || 8.0);
+              const runHours = Number(
+                (
+                  shift.running_hours ??
+                  Math.max(0, targetOperatingHours - shift.total_downtime_hours)
+                ).toFixed(1),
+              );
+
+              const rawInput = (() => {
+                const direct = Number(shift.raw_material_input_tons || 0);
+                if (direct > 0) return direct;
+                const mats = Array.isArray(shift.materials_consumption)
+                  ? (shift.materials_consumption as Array<{
+                      resource_name?: string;
+                      category?: string;
+                      actual_quantity?: number;
+                    }>)
+                  : [];
+                const m = mats.find((item) => {
+                  const name = (item.resource_name || '').toLowerCase();
+                  return (
+                    item.category === 'material' ||
+                    name.includes('cát nguyên khai') ||
+                    name.includes('quặng') ||
+                    name.includes('nguyên khai')
+                  );
+                });
+                return Number(m?.actual_quantity) || 0;
+              })();
+
+              // Sản lượng: chỉ tính thành phẩm (loại trừ phụ phẩm, bán thành phẩm MM/Magmin/VFS/FSAP)
+              const finishedOutput = (() => {
+                if (Array.isArray(shift.products_output) && shift.products_output.length > 0) {
+                  return shift.products_output.reduce((acc, p) => {
+                    return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+                  }, 0);
+                }
+                return Number(shift.product_output_tons || 0);
+              })();
+
+              // Công suất = Nguyên liệu cấp / Giờ chạy (TPH)
+              const actualCapacity =
+                runHours > 0 && rawInput > 0
+                  ? Number((rawInput / runHours).toFixed(1))
+                  : (shift.actual_capacity_tph && shift.actual_capacity_tph > 0 ? Number(shift.actual_capacity_tph) : 0);
+
+              // Năng suất = Sản lượng thành phẩm / Giờ chạy (TPH)
+              const actualProductivity =
+                runHours > 0 && finishedOutput > 0
+                  ? Number((finishedOutput / runHours).toFixed(1))
+                  : 0;
+
+              // Thu hồi = Thành phẩm / Nguyên liệu * 100%
+              const actualRecovery =
+                rawInput > 0 && finishedOutput > 0
+                  ? Number(((finishedOutput / rawInput) * 100).toFixed(2))
+                  : (shift.actual_recovery_rate_pct && shift.actual_recovery_rate_pct > 0 ? Number(shift.actual_recovery_rate_pct) : 0);
+
+              // Lấy giờ sự cố từ downtime_breakdown
+              const shiftIncidentHours = (() => {
+                const bd = shift.downtime_breakdown as Record<string, unknown> | undefined;
+                if (!bd || typeof bd !== 'object') return 0;
+                if (bd.incident_hours !== undefined && bd.incident_hours !== null) {
+                  return Number(bd.incident_hours) || 0;
+                }
+                if (Array.isArray(bd.events)) {
+                  return (
+                    bd.events as Array<{
+                      type?: string;
+                      duration_minutes?: number;
+                      duration_hours?: number;
+                    }>
+                  ).reduce((sum: number, ev) => {
+                    if (ev.type === 'breakdown_incident') {
+                      const mins = Number(ev.duration_minutes) || (Number(ev.duration_hours) || 0) * 60;
+                      return sum + mins / 60;
+                    }
+                    return sum;
+                  }, 0);
+                }
+                return 0;
+              })();
+
+              // OEE = A x P x Q
+              // A: Thời gian vận hành / (Thời gian vận hành + Thời gian sự cố)
+              const availScore =
+                runHours + shiftIncidentHours > 0
+                  ? (runHours / (runHours + shiftIncidentHours)) * 100
+                  : (runHours > 0 ? 100 : 0);
+
+              // P: Năng suất thực tế / Năng suất kế hoạch
+              const effectivePlannedRecovery =
+                plannedRecoveryRatePct && plannedRecoveryRatePct > 0
+                  ? plannedRecoveryRatePct
+                  : TARGET_RECOVERY_PCT;
+
+              const plannedProductivity =
+                plannedProductivityTph && plannedProductivityTph > 0
+                  ? plannedProductivityTph
+                  : (targetOperatingHours <= 8 ? TARGET_PRODUCTIVITY_TPH : (70.0 * (effectivePlannedRecovery / 100)));
+
+              const perfScore =
+                plannedProductivity > 0 && actualProductivity > 0
+                  ? (actualProductivity / plannedProductivity) * 100
+                  : 0;
+
+              // Q: Chất lượng thành phẩm
+              const actualQuality =
+                shift.actual_quality_rate_pct !== null && shift.actual_quality_rate_pct !== undefined
+                  ? Number(shift.actual_quality_rate_pct)
+                  : 100;
+
+              const availabilityScore = Math.min(100, Math.max(0, availScore));
+              const performanceScore = Math.min(100, Math.max(0, perfScore));
+              const qualityScore = Math.min(100, Math.max(0, actualQuality));
+
+              const oee =
+                runHours > 0 && actualProductivity > 0
+                  ? Number(
+                      (
+                        ((availabilityScore / 100) *
+                          (performanceScore / 100) *
+                          (qualityScore / 100)) *
+                        100
+                      ).toFixed(1),
+                    )
+                  : 0;
+
+              // Comparisons with Target / Plan
+              const isRunHoursMet = runHours >= targetOperatingHours;
+              const isCapMet = actualCapacity >= TARGET_CAPACITY_TPH;
+              const isProdMet = actualProductivity >= plannedProductivity;
+              const isRecMet = actualRecovery >= effectivePlannedRecovery;
+              const isOutputMet = finishedOutput >= TARGET_OUTPUT_TONS;
+              const isOeeMet = oee >= TARGET_OEE_PCT;
+
+              return (
+                <tr key={shift.id} className="transition-colors hover:bg-muted/30">
+                  {/* 1. Ngày & Ca */}
+                  <td className="px-3 py-3">
+                    {(() => {
+                      const isRange = Boolean(
+                        shift.end_date ||
+                        shift.shift_code?.startsWith('KY-') ||
+                        shift.downtime_breakdown?.is_date_range
+                      );
+                      const toDate = shift.end_date || shift.downtime_breakdown?.to_date;
+
+                      return (
+                        <>
+                          <div className="font-semibold text-foreground">
+                            {shift.shift_date}
+                            {isRange && toDate && toDate !== shift.shift_date && (
+                              <span className="text-muted-foreground font-normal"> → {toDate}</span>
+                            )}
+                          </div>
+                          {isRange ? (
+                            <span className="inline-flex items-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 text-[10px] font-semibold">
+                              Theo kỳ ({targetOperatingHours}h)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                              Ca {shift.shift_number}
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </td>
+
+                  {/* 2. Mã Line */}
+                  <td className="px-3 py-3 text-center">
+                    <span
+                      className="inline-block rounded font-mono font-bold text-xs bg-primary/10 text-primary px-2 py-0.5"
+                      title={shift.line_name || shift.shift_code}
                     >
-                      <Eye className="h-3.5 w-3.5" />
-                    </button>
-                    {canVerify && shift.status !== 'verified' && onVerify && (
+                      {shift.line_code || shift.line_name || 'LINE'}
+                    </span>
+                  </td>
+
+                  {/* 3. Thời gian vận hành: chỉ hiện số tg chay/tg dừng */}
+                  <td className="px-3 py-3 text-center">
+                    {renderMetricCell(
+                      `${runHours}h / ${shift.total_downtime_hours}h`,
+                      '',
+                      isRunHoursMet,
+                    )}
+                  </td>
+
+                  {/* 4. Công suất: chỉ hiện công suất (= nguyên liệu / thời gian vận hành) */}
+                  <td className="px-3 py-3 text-center">
+                    {renderMetricCell(
+                      actualCapacity,
+                      'TPH',
+                      isCapMet,
+                    )}
+                  </td>
+
+                  {/* 5. Năng suất (= sản lượng thành phẩm / thời gian vận hành) */}
+                  <td className="px-3 py-3 text-center">
+                    {renderMetricCell(
+                      actualProductivity,
+                      'TPH',
+                      isProdMet,
+                    )}
+                  </td>
+
+                  {/* 6. Thu hồi (= sản lượng thành phẩm / nguyên liệu) */}
+                  <td className="px-3 py-3 text-center">
+                    {renderMetricCell(
+                      `${actualRecovery}%`,
+                      '',
+                      isRecMet,
+                    )}
+                  </td>
+
+                  {/* 7. Sản lượng: chỉ tính thành phẩm */}
+                  <td className="px-3 py-3 text-center">
+                    {renderMetricCell(
+                      finishedOutput.toLocaleString('vi-VN'),
+                      'T',
+                      isOutputMet,
+                    )}
+                  </td>
+
+                  {/* 8. OEE (tính lại) */}
+                  <td className="px-3 py-3 text-center">
+                    {renderMetricCell(
+                      `${oee}%`,
+                      '',
+                      isOeeMet,
+                    )}
+                  </td>
+
+                  {/* 9. Trưởng ca (người cập nhật) */}
+                  <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
+                    {shift.operator_name || '---'}
+                  </td>
+
+                  {/* 10. Thao tác */}
+                  <td className="px-3 py-3 text-center">
+                    <div className="flex items-center justify-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => onVerify(shift)}
-                        className="rounded p-1 text-emerald-600 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/50"
-                        title="Nghiệm thu ca"
+                        onClick={() => onView(shift)}
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                        title="Xem chi tiết ca"
                       >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <Eye className="h-4 w-4" />
                       </button>
-                    )}
-                    {canManage && shift.status !== 'verified' && (
-                      <button
-                        type="button"
-                        onClick={() => onEdit(shift)}
-                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        title="Chỉnh sửa ca"
-                      >
-                        <Edit className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                    {canManage && shift.status === 'in_progress' && (
-                      <button
-                        type="button"
-                        onClick={() => onDelete(shift)}
-                        className="rounded p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50"
-                        title="Xóa ca"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => onEdit(shift)}
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                          title="Chỉnh sửa ca"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => onDelete(shift)}
+                          className="rounded p-1 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-colors"
+                          title="Xóa ca nhập liệu"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

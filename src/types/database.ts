@@ -1577,101 +1577,6 @@ export type Database = {
           },
         ]
       }
-      production_shift_logs: {
-        Row: {
-          change_type: string
-          changed_by_employee_id: string | null
-          content: string
-          created_at: string
-          id: string
-          log_time: string
-          shift_id: string
-        }
-        Insert: {
-          change_type: string
-          changed_by_employee_id?: string | null
-          content: string
-          created_at?: string
-          id?: string
-          log_time?: string
-          shift_id: string
-        }
-        Update: {
-          change_type?: string
-          changed_by_employee_id?: string | null
-          content?: string
-          created_at?: string
-          id?: string
-          log_time?: string
-          shift_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "production_shift_logs_changed_by_employee_id_fkey"
-            columns: ["changed_by_employee_id"]
-            isOneToOne: false
-            referencedRelation: "employees"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "production_shift_logs_shift_id_fkey"
-            columns: ["shift_id"]
-            isOneToOne: false
-            referencedRelation: "production_shifts"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      production_shift_meter_readings: {
-        Row: {
-          consumed_quantity: number
-          end_reading: number
-          id: string
-          meter_code: string
-          meter_name: string
-          meter_type: string
-          multiplier: number
-          notes: string | null
-          shift_id: string
-          start_reading: number
-          unit_of_measure: string
-        }
-        Insert: {
-          consumed_quantity: number
-          end_reading: number
-          id?: string
-          meter_code: string
-          meter_name: string
-          meter_type: string
-          multiplier?: number
-          notes?: string | null
-          shift_id: string
-          start_reading: number
-          unit_of_measure: string
-        }
-        Update: {
-          consumed_quantity?: number
-          end_reading?: number
-          id?: string
-          meter_code?: string
-          meter_name?: string
-          meter_type?: string
-          multiplier?: number
-          notes?: string | null
-          shift_id?: string
-          start_reading?: number
-          unit_of_measure?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "production_shift_meter_readings_shift_id_fkey"
-            columns: ["shift_id"]
-            isOneToOne: false
-            referencedRelation: "production_shifts"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       production_shift_receipts: {
         Row: {
           batch_number: string | null
@@ -1752,6 +1657,7 @@ export type Database = {
       production_shifts: {
         Row: {
           actual_capacity_tph: number | null
+          actual_quality_rate_pct: number | null
           actual_recovery_rate_pct: number | null
           byproduct_output_tons: number
           created_at: string
@@ -1760,6 +1666,9 @@ export type Database = {
           notes: string | null
           operator_employee_id: string | null
           product_output_tons: number
+          materials_consumption: Json
+          products_output: Json
+          downtime_breakdown: Json
           raw_material_input_tons: number
           running_hours: number | null
           shift_code: string
@@ -1773,11 +1682,15 @@ export type Database = {
         }
         Insert: {
           actual_capacity_tph?: number | null
+          actual_quality_rate_pct?: number | null
           actual_recovery_rate_pct?: number | null
           byproduct_output_tons?: number
           created_at?: string
           id?: string
           line_id: string
+          materials_consumption?: Json
+          products_output?: Json
+          downtime_breakdown?: Json
           notes?: string | null
           operator_employee_id?: string | null
           product_output_tons?: number
@@ -1794,11 +1707,15 @@ export type Database = {
         }
         Update: {
           actual_capacity_tph?: number | null
+          actual_quality_rate_pct?: number | null
           actual_recovery_rate_pct?: number | null
           byproduct_output_tons?: number
           created_at?: string
           id?: string
           line_id?: string
+          materials_consumption?: Json
+          products_output?: Json
+          downtime_breakdown?: Json
           notes?: string | null
           operator_employee_id?: string | null
           product_output_tons?: number
