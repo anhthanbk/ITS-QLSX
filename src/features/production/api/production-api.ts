@@ -25,6 +25,12 @@ import type {
   PlanStatus,
   ShiftStatus,
   ShiftDowntimeBreakdown,
+  BatchShiftWarehouseSyncPayload,
+  BatchShiftWarehouseSyncItem,
+  DowntimeIncidentRecord,
+  IncidentAnalyticsFilters,
+  ParetoItem,
+  IncidentAIInsight,
 } from '../types';
 import { isFinishedProduct } from '../types';
 import {
@@ -145,6 +151,8 @@ interface RawShiftRow {
   materials_consumption?: unknown;
   products_output?: unknown;
   downtime_breakdown?: unknown;
+  warehouse_synced?: boolean;
+  warehouse_synced_at?: string | null;
   created_at: string;
   updated_at: string;
   production_lines?: { name: string; code: string } | null;
@@ -1121,6 +1129,7 @@ export async function fetchProductionShifts(
         byproduct_output_tons, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct,
         operator_employee_id, notes,
         materials_consumption, products_output, downtime_breakdown,
+        warehouse_synced, warehouse_synced_at,
         created_at, updated_at,
         production_lines ( name, code ),
         employees ( first_name, last_name, employee_code )
@@ -1180,6 +1189,8 @@ export async function fetchProductionShifts(
       materials_consumption: Array.isArray(row.materials_consumption) ? row.materials_consumption : [],
       products_output: Array.isArray(row.products_output) ? row.products_output : [],
       downtime_breakdown: row.downtime_breakdown && typeof row.downtime_breakdown === 'object' ? (row.downtime_breakdown as ProductionShift['downtime_breakdown']) : undefined,
+      warehouse_synced: !!row.warehouse_synced,
+      warehouse_synced_at: row.warehouse_synced_at || null,
       end_date:
         (row.downtime_breakdown as Record<string, unknown> | null)?.to_date as string | undefined ||
         row.notes?.match(/\[Kỳ:\s*([^\s]+)\s*(?:đến|->|-)\s*([^\]]+)\]/i)?.[2]?.trim() ||
@@ -1211,6 +1222,7 @@ export async function fetchProductionShiftById(id: string): Promise<{
         byproduct_output_tons, actual_capacity_tph, actual_recovery_rate_pct, actual_quality_rate_pct,
         operator_employee_id, notes,
         materials_consumption, products_output, downtime_breakdown,
+        warehouse_synced, warehouse_synced_at,
         created_at, updated_at,
         production_lines ( name, code ),
         employees ( first_name, last_name, employee_code )
@@ -1255,13 +1267,15 @@ export async function fetchProductionShiftById(id: string): Promise<{
       materials_consumption: Array.isArray(shiftData.materials_consumption) ? shiftData.materials_consumption : [],
       products_output: Array.isArray(shiftData.products_output) ? shiftData.products_output : [],
       downtime_breakdown: shiftData.downtime_breakdown && typeof shiftData.downtime_breakdown === 'object' ? (shiftData.downtime_breakdown as ProductionShift['downtime_breakdown']) : undefined,
-    end_date:
-      (shiftData.downtime_breakdown as Record<string, unknown> | null)?.to_date as string | undefined ||
-      shiftData.notes?.match(/\[Kỳ:\s*([^\s]+)\s*(?:đến|->|-)\s*([^\]]+)\]/i)?.[2]?.trim() ||
-      null,
-    created_at: shiftData.created_at,
-    updated_at: shiftData.updated_at,
-  };
+      warehouse_synced: !!shiftData.warehouse_synced,
+      warehouse_synced_at: shiftData.warehouse_synced_at || null,
+      end_date:
+        (shiftData.downtime_breakdown as Record<string, unknown> | null)?.to_date as string | undefined ||
+        shiftData.notes?.match(/\[Kỳ:\s*([^\s]+)\s*(?:đến|->|-)\s*([^\]]+)\]/i)?.[2]?.trim() ||
+        null,
+      created_at: shiftData.created_at,
+      updated_at: shiftData.updated_at,
+    };
 
   const { data: downData } = await supabase
     .from('production_shift_downtime')
@@ -1414,13 +1428,16 @@ async function syncShiftDowntimeRecords(
       downtimeInserts.push({
         shift_id: shiftId,
         line_id: lineId,
+        machine_id: evt.machine_id || null,
+        equipment_code: evt.equipment_code?.trim() || null,
         downtime_category: evt.type,
+        incident_category: evt.incident_category?.trim() || null,
+        shutdown_type: evt.shutdown_type?.trim() || null,
+        maintenance_type: evt.maintenance_type?.trim() || null,
         start_time: startIso,
         end_time: endIso,
         duration_minutes: evt.duration_minutes || Math.round((evt.duration_hours || 0) * 60),
-        reason: evt.incident_category
-          ? `[${evt.incident_category}] ${evt.reason || 'Dừng máy'}`
-          : evt.reason || 'Dừng máy',
+        reason: evt.reason?.trim() || (evt.incident_category ? `[${evt.incident_category}]` : 'Dừng máy'),
         action_taken: evt.action_taken || null,
         status: 'resolved' as const,
       });
@@ -1430,7 +1447,12 @@ async function syncShiftDowntimeRecords(
       downtimeInserts.push({
         shift_id: shiftId,
         line_id: lineId,
+        machine_id: null,
+        equipment_code: null,
         downtime_category: 'planned_maintenance' as const,
+        incident_category: null,
+        shutdown_type: null,
+        maintenance_type: 'Bảo trì kế hoạch',
         start_time: baseDate.toISOString(),
         end_time: new Date(baseDate.getTime() + breakdown.maintenance_hours * 3600000).toISOString(),
         duration_minutes: Math.round(breakdown.maintenance_hours * 60),
@@ -1441,16 +1463,26 @@ async function syncShiftDowntimeRecords(
     }
 
     if (breakdown.incident_hours > 0) {
+      const incCat =
+        breakdown.incident_category === 'mechanical'
+          ? 'Sự cố cơ khí'
+          : breakdown.incident_category === 'electrical_automation'
+          ? 'Sự cố điện - Tự động hóa'
+          : breakdown.incident_category?.trim() || 'Sự cố cơ khí';
+
       downtimeInserts.push({
         shift_id: shiftId,
         line_id: lineId,
+        machine_id: null,
+        equipment_code: null,
         downtime_category: 'breakdown_incident' as const,
+        incident_category: incCat,
+        shutdown_type: null,
+        maintenance_type: null,
         start_time: baseDate.toISOString(),
         end_time: new Date(baseDate.getTime() + breakdown.incident_hours * 3600000).toISOString(),
         duration_minutes: Math.round(breakdown.incident_hours * 60),
-        reason: breakdown.incident_category
-          ? `[${breakdown.incident_category}] ${breakdown.incident_reason || 'Sự cố dừng máy'}`
-          : breakdown.incident_reason || 'Sự cố dừng máy',
+        reason: breakdown.incident_reason || `[${incCat}] Sự cố dừng máy`,
         action_taken: breakdown.incident_action || null,
         status: 'resolved' as const,
       });
@@ -1460,7 +1492,12 @@ async function syncShiftDowntimeRecords(
       downtimeInserts.push({
         shift_id: shiftId,
         line_id: lineId,
+        machine_id: null,
+        equipment_code: null,
         downtime_category: 'scheduled_shutdown' as const,
+        incident_category: null,
+        shutdown_type: 'Nghỉ trong kế hoạch',
+        maintenance_type: null,
         start_time: baseDate.toISOString(),
         end_time: new Date(baseDate.getTime() + breakdown.planned_shutdown_hours * 3600000).toISOString(),
         duration_minutes: Math.round(breakdown.planned_shutdown_hours * 60),
@@ -2408,3 +2445,571 @@ export async function fetchShiftPlanContext(
     return { products: [], materials: [] };
   }
 }
+
+// ==========================================
+// 8. BATCH PRODUCTION WAREHOUSE SYNC
+// ==========================================
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function batchSyncShiftsToWarehouse(payload: BatchShiftWarehouseSyncPayload): Promise<{
+  success: boolean;
+  transactionsCreated: number;
+  shiftsUpdated: number;
+}> {
+  const { selected_shift_ids, products, byproducts, materials, notes } = payload;
+  if (!selected_shift_ids || selected_shift_ids.length === 0) {
+    throw new Error('Vui lòng chọn ít nhất một ca sản xuất để nghiệm thu và sinh phiếu kho.');
+  }
+
+  const { data: authData } = await supabase.auth.getUser();
+  const userId = authData?.user?.id || null;
+
+  // Build lookup maps for materials and products to resolve valid UUIDs
+  const [matsRes, prodsRes] = await Promise.all([
+    supabase.from('materials').select('id, code, name'),
+    supabase.from('products').select('id, sku, name'),
+  ]);
+
+  const matMap = new Map<string, string>();
+  (matsRes.data || []).forEach((m) => {
+    matMap.set(m.id.toLowerCase(), m.id);
+    if (m.code) matMap.set(m.code.trim().toLowerCase(), m.id);
+    if (m.name) matMap.set(m.name.trim().toLowerCase(), m.id);
+  });
+
+  const prodMap = new Map<string, string>();
+  (prodsRes.data || []).forEach((p) => {
+    prodMap.set(p.id.toLowerCase(), p.id);
+    if (p.sku) prodMap.set(p.sku.trim().toLowerCase(), p.id);
+    if (p.name) prodMap.set(p.name.trim().toLowerCase(), p.id);
+  });
+
+  const resolveItemId = (item: BatchShiftWarehouseSyncItem): string | null => {
+    const rawId = item.item_id?.trim();
+    if (rawId && UUID_REGEX.test(rawId)) return rawId;
+
+    if (item.item_type === 'material') {
+      const cleanName = (item.item_name || '').replace(/^(material|supply|fuel):/i, '').trim().toLowerCase();
+      const cleanCode = (item.item_code || '').trim().toLowerCase();
+      return matMap.get(cleanCode) || matMap.get(cleanName) || null;
+    } else {
+      const cleanCode = (item.item_code || '').trim().toLowerCase();
+      const cleanName = (item.item_name || '').trim().toLowerCase();
+      return prodMap.get(cleanCode) || prodMap.get(cleanName) || null;
+    }
+  };
+
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const randomSuffix = () => Math.random().toString(36).substring(2, 6).toUpperCase();
+
+  const txInserts: Database['public']['Tables']['inventory_transactions']['Insert'][] = [];
+  let txCounter = 1;
+
+  // 1. Inbound Finished Products (production_receipt)
+  for (const item of products) {
+    if (!item.warehouse_id || item.total_quantity <= 0) continue;
+    const resolvedId = resolveItemId(item);
+    if (!resolvedId) continue;
+
+    const txNum = `NK-SX-${dateStr}-${pad(txCounter++)}-${randomSuffix()}`;
+    const shiftCodesStr = item.shift_codes?.length ? ` [${item.shift_codes.join(', ')}]` : '';
+    const locStr = item.storage_location ? ` - Vị trí: ${item.storage_location}` : '';
+
+    txInserts.push({
+      transaction_number: txNum,
+      warehouse_id: item.warehouse_id,
+      item_type: 'product',
+      item_id: resolvedId,
+      transaction_type: 'production_receipt',
+      quantity: Math.abs(item.total_quantity),
+      unit_cost: 0,
+      reference_doc_type: 'production_shift',
+      reference_doc_id: item.shift_ids?.[0] || selected_shift_ids[0],
+      notes: `[Nghiệm thu SX] Nhập thành phẩm: ${item.item_name} (${item.item_code})${locStr}${shiftCodesStr}${notes ? ` - ${notes}` : ''}`,
+      created_by: userId,
+    });
+  }
+
+  // 2. Inbound Byproducts (production_receipt)
+  for (const item of byproducts) {
+    if (!item.warehouse_id || item.total_quantity <= 0) continue;
+    const resolvedId = resolveItemId(item);
+    if (!resolvedId) continue;
+
+    const txNum = `NK-PP-${dateStr}-${pad(txCounter++)}-${randomSuffix()}`;
+    const shiftCodesStr = item.shift_codes?.length ? ` [${item.shift_codes.join(', ')}]` : '';
+    const locStr = item.storage_location ? ` - Vị trí: ${item.storage_location}` : '';
+
+    txInserts.push({
+      transaction_number: txNum,
+      warehouse_id: item.warehouse_id,
+      item_type: 'byproduct',
+      item_id: resolvedId,
+      transaction_type: 'production_receipt',
+      quantity: Math.abs(item.total_quantity),
+      unit_cost: 0,
+      reference_doc_type: 'production_shift',
+      reference_doc_id: item.shift_ids?.[0] || selected_shift_ids[0],
+      notes: `[Nghiệm thu SX] Nhập phụ phẩm: ${item.item_name} (${item.item_code})${locStr}${shiftCodesStr}${notes ? ` - ${notes}` : ''}`,
+      created_by: userId,
+    });
+  }
+
+  // 3. Outbound Raw Materials & Fuels (production_issue)
+  for (const item of materials) {
+    if (!item.warehouse_id || item.total_quantity <= 0) continue;
+    const resolvedId = resolveItemId(item);
+    // Bỏ qua các mục không có trong kho lưu trữ (như điện lực)
+    if (!resolvedId) continue;
+
+    const txNum = `XK-SX-${dateStr}-${pad(txCounter++)}-${randomSuffix()}`;
+    const shiftCodesStr = item.shift_codes?.length ? ` [${item.shift_codes.join(', ')}]` : '';
+
+    txInserts.push({
+      transaction_number: txNum,
+      warehouse_id: item.warehouse_id,
+      item_type: 'material',
+      item_id: resolvedId,
+      transaction_type: 'production_issue',
+      quantity: -Math.abs(item.total_quantity),
+      unit_cost: 0,
+      reference_doc_type: 'production_shift',
+      reference_doc_id: item.shift_ids?.[0] || selected_shift_ids[0],
+      notes: `[Nghiệm thu SX] Xuất vật tư tiêu hao: ${item.item_name} (${item.item_code})${shiftCodesStr}${notes ? ` - ${notes}` : ''}`,
+      created_by: userId,
+    });
+  }
+
+  // Execute transaction inserts
+  if (txInserts.length > 0) {
+    const { error: insertErr } = await supabase.from('inventory_transactions').insert(txInserts);
+    if (insertErr) {
+      throw new Error(`Lỗi sinh phiếu kho: ${insertErr.message}`);
+    }
+  }
+
+  // Update production_shifts marking as synced
+  const { error: updateErr } = await supabase
+    .from('production_shifts')
+    .update({
+      warehouse_synced: true,
+      warehouse_synced_at: new Date().toISOString(),
+    })
+    .in('id', selected_shift_ids);
+
+  if (updateErr) {
+    throw new Error(`Lỗi cập nhật trạng thái ca: ${updateErr.message}`);
+  }
+
+  return {
+    success: true,
+    transactionsCreated: txInserts.length,
+    shiftsUpdated: selected_shift_ids.length,
+  };
+}
+
+// ==============================================================================
+// 12. DOWNTIME INCIDENT & PARETO ANALYTICS API
+// ==============================================================================
+
+export async function fetchDowntimeIncidents(
+  filters: IncidentAnalyticsFilters = {},
+): Promise<DowntimeIncidentRecord[]> {
+  let query = supabase
+    .from('production_shift_downtime')
+    .select(`
+      id,
+      shift_id,
+      line_id,
+      machine_id,
+      equipment_code,
+      downtime_category,
+      incident_category,
+      shutdown_type,
+      maintenance_type,
+      start_time,
+      end_time,
+      duration_minutes,
+      reason,
+      action_taken,
+      status,
+      created_at,
+      production_shifts:shift_id (
+        shift_code,
+        shift_date,
+        shift_number,
+        downtime_breakdown
+      ),
+      production_lines:line_id (
+        id,
+        code,
+        name
+      ),
+      machines:machine_id (
+        id,
+        machine_code,
+        name
+      )
+    `)
+    .order('start_time', { ascending: false });
+
+  if (filters.lineId && filters.lineId !== 'all') {
+    query = query.eq('line_id', filters.lineId);
+  }
+  if (filters.downtimeType && filters.downtimeType !== 'all') {
+    query = query.eq('downtime_category', filters.downtimeType);
+  }
+  if (filters.fromDate) {
+    query = query.gte('start_time', `${filters.fromDate}T00:00:00Z`);
+  }
+  if (filters.toDate) {
+    query = query.lte('start_time', `${filters.toDate}T23:59:59Z`);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('Failed to fetch downtime incidents:', error);
+    throw new Error(error.message);
+  }
+
+  const records: DowntimeIncidentRecord[] = [];
+
+  for (const row of (data || []) as unknown as Array<{
+    id: string;
+    shift_id: string;
+    line_id: string;
+    machine_id: string | null;
+    equipment_code: string | null;
+    downtime_category: string;
+    incident_category: string | null;
+    shutdown_type: string | null;
+    maintenance_type: string | null;
+    start_time: string;
+    end_time: string;
+    duration_minutes: number | string;
+    reason: string;
+    action_taken: string | null;
+    status: string;
+    production_shifts?: {
+      shift_code?: string;
+      shift_date?: string;
+      shift_number?: number;
+      downtime_breakdown?: {
+        updated_by_name?: string;
+        operator_name?: string;
+      };
+    } | null;
+    production_lines?: {
+      id?: string;
+      code?: string;
+      name?: string;
+    } | null;
+    machines?: {
+      id?: string;
+      machine_code?: string;
+      name?: string;
+    } | null;
+  }>) {
+    const rawReason = row.reason || '';
+    let category = row.incident_category;
+    let eqCode = row.equipment_code || row.machines?.machine_code || null;
+    const eqName = row.machines?.name || null;
+
+    // Fallback parsing from reason tag e.g. "[Sự cố Cơ khí] Kẹt máy nghiền (M13)"
+    if (!category && rawReason.startsWith('[')) {
+      const match = rawReason.match(/^\[(.*?)\]/);
+      if (match && match[1]) {
+        category = match[1];
+      }
+    }
+
+    // Standardize legacy / English category keys to friendly Vietnamese labels
+    if (category) {
+      const lower = category.toLowerCase().trim();
+      if (lower === 'mechanical' || lower === 'sự cố cơ khí') category = 'Sự cố cơ khí';
+      else if (lower === 'electrical_automation' || lower.includes('điện')) category = 'Sự cố điện - Tự động hóa';
+      else if (lower === 'quality' || lower.includes('chất lượng')) category = 'Sự cố chất lượng';
+      else if (lower === 'feeding' || lower.includes('cấp liệu') || lower.includes('tắc nghẽn')) category = 'Sự cố cấp liệu / Tắc nghẽn';
+      else if (lower === 'process' || lower.includes('công nghệ')) category = 'Sự cố công nghệ';
+      else if (lower === 'safety' || lower.includes('an toàn')) category = 'Sự cố an toàn / Môi trường';
+      else if (lower === 'other' || lower === 'khác') category = 'Sự cố khác';
+    } else if (row.downtime_category === 'breakdown_incident') {
+      category = 'Sự cố cơ khí';
+    }
+
+    if (!eqCode) {
+      const eqMatch = rawReason.match(/\b([A-Z]{1,4}-\d{1,3}|[A-Z]\d{2,3})\b/);
+      if (eqMatch && eqMatch[1]) {
+        eqCode = eqMatch[1];
+      }
+    }
+
+    const durMinutes = Number(row.duration_minutes) || 0;
+    const durHours = Number((durMinutes / 60).toFixed(2));
+
+    const shiftDate: string =
+      row.production_shifts?.shift_date ||
+      (row.start_time ? (row.start_time.split('T')[0] ?? '') : '') ||
+      '';
+
+    const shiftNumber = row.production_shifts?.shift_number || 1;
+    const shiftCode =
+      row.production_shifts?.shift_code ||
+      `CA${shiftNumber}-${shiftDate.replace(/-/g, '')}`;
+
+    const rec: DowntimeIncidentRecord = {
+      id: row.id,
+      shift_id: row.shift_id,
+      shift_code: shiftCode,
+      shift_date: shiftDate,
+      shift_number: shiftNumber,
+      line_id: row.line_id,
+      line_code: row.production_lines?.code || 'LINE',
+      line_name: row.production_lines?.name || 'Dây chuyền',
+      type: row.downtime_category as DowntimeIncidentRecord['type'],
+      machine_id: row.machine_id,
+      equipment_code: eqCode,
+      equipment_name: eqName,
+      incident_category: category,
+      shutdown_type:
+        row.shutdown_type ||
+        (row.downtime_category === 'scheduled_shutdown' ? 'Nghỉ trong kế hoạch' : null),
+      maintenance_type:
+        row.maintenance_type ||
+        (row.downtime_category === 'planned_maintenance' ? 'Bảo trì kế hoạch' : null),
+      reason: rawReason.replace(/^\[.*?\]\s*/, ''),
+      action_taken: row.action_taken,
+      duration_minutes: durMinutes,
+      duration_hours: durHours,
+      start_time: row.start_time,
+      end_time: row.end_time,
+      status: row.status,
+      operator_name:
+        row.production_shifts?.downtime_breakdown?.operator_name ||
+        row.production_shifts?.downtime_breakdown?.updated_by_name,
+    };
+
+    if (filters.search) {
+      const q = filters.search.toLowerCase().trim();
+      const match =
+        rec.reason.toLowerCase().includes(q) ||
+        (rec.equipment_code && rec.equipment_code.toLowerCase().includes(q)) ||
+        (rec.incident_category && rec.incident_category.toLowerCase().includes(q)) ||
+        rec.line_name?.toLowerCase().includes(q) ||
+        rec.shift_code?.toLowerCase().includes(q);
+      if (!match) continue;
+    }
+
+    records.push(rec);
+  }
+
+  return records;
+}
+
+export function calculatePareto(
+  records: DowntimeIncidentRecord[],
+  dimension: 'incident_category' | 'equipment_code' = 'incident_category',
+): {
+  frequencyPareto: ParetoItem[];
+  durationPareto: ParetoItem[];
+  totalIncidents: number;
+  totalHours: number;
+} {
+  const totalIncidents = records.length;
+  const totalHours = Number(
+    records.reduce((sum, r) => sum + r.duration_hours, 0).toFixed(2),
+  );
+
+  if (totalIncidents === 0) {
+    return {
+      frequencyPareto: [],
+      durationPareto: [],
+      totalIncidents: 0,
+      totalHours: 0,
+    };
+  }
+
+  // Group metrics by dimension
+  const groups: Record<
+    string,
+    { key: string; label: string; count: number; duration_hours: number }
+  > = {};
+
+  for (const r of records) {
+    let key = '';
+    let label = '';
+
+    if (dimension === 'incident_category') {
+      if (r.type === 'breakdown_incident') {
+        key = r.incident_category?.trim() || 'Sự cố khác';
+        label = key;
+      } else if (r.type === 'planned_maintenance') {
+        key = r.maintenance_type?.trim() || 'Bảo trì kế hoạch';
+        label = `[Bảo trì] ${key}`;
+      } else if (r.type === 'scheduled_shutdown') {
+        key = r.shutdown_type?.trim() || 'Nghỉ trong kế hoạch';
+        label = `[Nghỉ KH] ${key}`;
+      } else {
+        key = 'Khác';
+        label = 'Khác';
+      }
+    } else {
+      // equipment_code
+      if (r.equipment_code && r.equipment_code.trim()) {
+        key = r.equipment_code.trim().toUpperCase();
+        label = r.equipment_name ? `${key} - ${r.equipment_name}` : key;
+      } else {
+        key = 'TOAN_LINE';
+        label = 'Toàn dây chuyền / Chưa gán thiết bị';
+      }
+    }
+
+    const existing = groups[key] ?? { key, label, count: 0, duration_hours: 0 };
+    existing.count += 1;
+    existing.duration_hours += r.duration_hours;
+    groups[key] = existing;
+  }
+
+  const groupList = Object.values(groups);
+
+  // 1. Frequency Pareto (sorted by count descending)
+  const sortedByCount = [...groupList].sort((a, b) => b.count - a.count);
+  let runningCountSum = 0;
+  const frequencyPareto: ParetoItem[] = sortedByCount.map((item, idx) => {
+    runningCountSum += item.count;
+    const percentage = Number(((item.count / totalIncidents) * 100).toFixed(1));
+    const cumulative_percentage = Number(
+      Math.min(100, (runningCountSum / totalIncidents) * 100).toFixed(1),
+    );
+    // Vital few: within 80% or first item crossing 80%
+    const is_in_vital_few =
+      cumulative_percentage <= 80 ||
+      (idx > 0 && ((runningCountSum - item.count) / totalIncidents) * 100 < 80) ||
+      idx === 0;
+
+    return {
+      key: item.key,
+      label: item.label,
+      count: item.count,
+      duration_hours: Number(item.duration_hours.toFixed(2)),
+      percentage,
+      cumulative_percentage,
+      is_in_vital_few,
+    };
+  });
+
+  // 2. Duration Pareto (sorted by duration_hours descending)
+  const sortedByDuration = [...groupList].sort(
+    (a, b) => b.duration_hours - a.duration_hours,
+  );
+  let runningHoursSum = 0;
+  const durationPareto: ParetoItem[] = sortedByDuration.map((item, idx) => {
+    runningHoursSum += item.duration_hours;
+    const percentage =
+      totalHours > 0
+        ? Number(((item.duration_hours / totalHours) * 100).toFixed(1))
+        : 0;
+    const cumulative_percentage =
+      totalHours > 0
+        ? Number(Math.min(100, (runningHoursSum / totalHours) * 100).toFixed(1))
+        : 100;
+
+    const is_in_vital_few =
+      cumulative_percentage <= 80 ||
+      (idx > 0 && totalHours > 0 && ((runningHoursSum - item.duration_hours) / totalHours) * 100 < 80) ||
+      idx === 0;
+
+    return {
+      key: item.key,
+      label: item.label,
+      count: item.count,
+      duration_hours: Number(item.duration_hours.toFixed(2)),
+      percentage,
+      cumulative_percentage,
+      is_in_vital_few,
+    };
+  });
+
+  return {
+    frequencyPareto,
+    durationPareto,
+    totalIncidents,
+    totalHours,
+  };
+}
+
+export function generateIncidentAIInsights(
+  frequencyPareto: ParetoItem[],
+  durationPareto: ParetoItem[],
+  totalIncidents: number,
+  totalHours: number,
+): IncidentAIInsight {
+  const topFreq = frequencyPareto[0];
+  const topDur = durationPareto[0];
+
+  if (totalIncidents === 0 || !topFreq || !topDur) {
+    return {
+      vitalFewSummary: 'Chưa có đủ dữ liệu sự cố trong khoảng thời gian đã chọn để phân tích theo quy luật 80/20.',
+      frequencyVsDurationComment: 'Hệ thống cần ít nhất 1 ca có phát sinh dừng máy để trích xuất quy luật phân bổ.',
+      topBottleneckEquipment: 'Không xác định được thiết bị điểm nghẽn.',
+      recommendations: [],
+    };
+  }
+
+  // Vital few for frequency & duration
+  const vitalFreq = frequencyPareto.filter((p) => p.is_in_vital_few);
+  const vitalDur = durationPareto.filter((p) => p.is_in_vital_few);
+
+  const topFreqLabels = vitalFreq.slice(0, 3).map((p) => p.label).join(', ') || topFreq.label;
+  const topDurLabels = vitalDur.slice(0, 3).map((p) => p.label).join(', ') || topDur.label;
+
+  const vitalFewSummary = `Theo quy luật Pareto 80/20: Có ${vitalDur.length || 1}/${durationPareto.length} nhóm nguyên nhân (${topDurLabels}) đang chiếm hơn 80% tổng thời gian dừng chuyền (${totalHours}h). Về tần suất lặp lại, các nguyên nhân chiếm nhiều nhất gồm (${topFreqLabels}). Tập trung giải quyết dứt điểm các nguyên nhân này sẽ phục hồi phần lớn công suất vận hành.`;
+
+  // Compare frequency vs duration
+  let frequencyVsDurationComment = '';
+
+  if (topFreq.key === topDur.key) {
+    frequencyVsDurationComment = `Nguyên nhân "${topFreq.label}" là điểm nóng nhất: đứng đầu cả về số lần dừng (${topFreq.count} lần, ${topFreq.percentage}%) lẫn thời gian dừng (${topFreq.duration_hours}h, ${topDur.percentage}%). Cần thành lập chuyên đề cải tiến ngay.`;
+  } else {
+    frequencyVsDurationComment = `Có sự chênh lệch đáng chú ý: "${topFreq.label}" xảy ra thường xuyên nhất (${topFreq.count} lần), nhưng "${topDur.label}" mới là nguyên nhân gây tê liệt thời gian dài nhất (${topDur.duration_hours}h). Cần chiến lược xử lý song song: chống lặp lại cho nhóm tần suất và chuẩn bị sẵn phương án xử lý nhanh cho nhóm thời lượng dài.`;
+  }
+
+  const topBottleneckEquipment = topDur.label;
+
+  const recommendations: IncidentAIInsight['recommendations'] = [];
+
+  // Urgent recommendation
+  recommendations.push({
+    priority: 'urgent',
+    title: `Xử lý triệt để nguyên nhân tốn thời gian nhất: ${topDur.label}`,
+    description: `Chiếm ${topDur.percentage}% tổng thời gian dừng chuyền. Yêu cầu bộ phận Cơ điện và Quản đốc kiểm tra hồ sơ sự cố, rà soát phụ tùng thay thế và lập quy trình ứng cứu sự cố không quá 30 phút.`,
+    affectedKey: topDur.key,
+  });
+
+  // Frequency recommendation
+  if (topFreq.key !== topDur.key) {
+    recommendations.push({
+      priority: 'medium',
+      title: `Giảm thiểu sự cố lặp lại tần suất cao: ${topFreq.label}`,
+      description: `Xuất hiện ${topFreq.count} lần trong kỳ. Cần rà soát nhật ký vận hành ca, đào tạo lại công nhân vận hành về kiểm soát liệu cấp/thao tác máy và tăng cường bôi trơn, siết ốc định kỳ ca.`,
+      affectedKey: topFreq.key,
+    });
+  }
+
+  // Preventive recommendation
+  recommendations.push({
+    priority: 'preventive',
+    title: 'Chuyển đổi bảo trì phản ứng sang bảo trì ngăn ngừa (TPM)',
+    description: 'Tận dụng các khoảng thời gian dừng máy do đầy kho hoặc chuyển ca để thực hiện bảo dưỡng kỹ thuật 15-30 phút, hạn chế tối đa dừng đột xuất giữa ca sản xuất.',
+  });
+
+  return {
+    vitalFewSummary,
+    frequencyVsDurationComment,
+    topBottleneckEquipment,
+    recommendations,
+  };
+}
+

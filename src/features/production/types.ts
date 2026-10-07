@@ -120,6 +120,8 @@ export interface ShiftMaterialConsumption {
   planned_norm?: number;
   actual_quantity: number;
   notes?: string;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
 }
 
 export interface ShiftProductOutput {
@@ -130,6 +132,9 @@ export interface ShiftProductOutput {
   unit_of_measure: string;
   is_out_of_plan: boolean;
   quantity_tons: number;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
+  storage_location?: string | null;
 }
 
 export interface ShiftDowntimeEvent {
@@ -139,7 +144,12 @@ export interface ShiftDowntimeEvent {
   end_time: string;   // "HH:mm" e.g. "08:45"
   duration_minutes?: number;
   duration_hours: number;
+  machine_id?: string | null;
+  equipment_code?: string | null;
+  equipment_name?: string | null;
   incident_category?: string | null;
+  shutdown_type?: string | null;
+  maintenance_type?: string | null;
   reason?: string | null;
   action_taken?: string | null;
 }
@@ -187,8 +197,33 @@ export interface ProductionShift {
   materials_consumption?: ShiftMaterialConsumption[];
   products_output?: ShiftProductOutput[];
   downtime_breakdown?: ShiftDowntimeBreakdown;
+  warehouse_synced?: boolean;
+  warehouse_synced_at?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface BatchShiftWarehouseSyncItem {
+  id?: string;
+  item_type: 'product' | 'byproduct' | 'material';
+  item_id: string;
+  item_code: string;
+  item_name: string;
+  unit_of_measure: string;
+  total_quantity: number;
+  warehouse_id: string;
+  warehouse_name?: string;
+  storage_location?: string | null;
+  shift_ids: string[];
+  shift_codes: string[];
+}
+
+export interface BatchShiftWarehouseSyncPayload {
+  selected_shift_ids: string[];
+  products: BatchShiftWarehouseSyncItem[];
+  byproducts: BatchShiftWarehouseSyncItem[];
+  materials: BatchShiftWarehouseSyncItem[];
+  notes?: string | null;
 }
 
 export type DowntimeCategory =
@@ -545,4 +580,63 @@ export interface AnnualPlanData {
   timePlan: Record<number, AnnualPlanTimeMonth>;
   targetQualityPct: Record<number, number>; // Month 1..12 -> %
 }
+
+// 7. Downtime Incident & Pareto Analytics
+export interface DowntimeIncidentRecord {
+  id: string;
+  shift_id: string;
+  shift_code?: string;
+  shift_date: string;
+  shift_number: number;
+  line_id: string;
+  line_code?: string;
+  line_name?: string;
+  type: 'breakdown_incident' | 'planned_maintenance' | 'scheduled_shutdown';
+  machine_id?: string | null;
+  equipment_code?: string | null;
+  equipment_name?: string | null;
+  incident_category?: string | null;
+  shutdown_type?: string | null;
+  maintenance_type?: string | null;
+  reason: string;
+  action_taken?: string | null;
+  duration_minutes: number;
+  duration_hours: number;
+  start_time: string;
+  end_time: string;
+  status: string;
+  operator_name?: string;
+}
+
+export interface ParetoItem {
+  key: string;
+  label: string;
+  count: number;
+  duration_hours: number;
+  percentage: number;
+  cumulative_percentage: number;
+  is_in_vital_few: boolean;
+}
+
+export interface IncidentAnalyticsFilters {
+  lineId?: string;
+  fromDate?: string;
+  toDate?: string;
+  downtimeType?: 'all' | 'breakdown_incident' | 'planned_maintenance' | 'scheduled_shutdown';
+  dimension?: 'incident_category' | 'equipment_code';
+  search?: string;
+}
+
+export interface IncidentAIInsight {
+  vitalFewSummary: string;
+  frequencyVsDurationComment: string;
+  topBottleneckEquipment: string;
+  recommendations: Array<{
+    priority: 'urgent' | 'medium' | 'preventive';
+    title: string;
+    description: string;
+    affectedKey?: string;
+  }>;
+}
+
 

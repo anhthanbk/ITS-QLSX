@@ -1507,12 +1507,16 @@ export type Database = {
           downtime_category: string
           duration_minutes: number
           end_time: string
+          equipment_code: string | null
           id: string
+          incident_category: string | null
           line_id: string
           machine_id: string | null
+          maintenance_type: string | null
           reason: string
           reported_by_employee_id: string | null
           shift_id: string
+          shutdown_type: string | null
           start_time: string
           status: string
         }
@@ -1522,12 +1526,16 @@ export type Database = {
           downtime_category: string
           duration_minutes: number
           end_time: string
+          equipment_code?: string | null
           id?: string
+          incident_category?: string | null
           line_id: string
           machine_id?: string | null
+          maintenance_type?: string | null
           reason: string
           reported_by_employee_id?: string | null
           shift_id: string
+          shutdown_type?: string | null
           start_time: string
           status?: string
         }
@@ -1537,12 +1545,16 @@ export type Database = {
           downtime_category?: string
           duration_minutes?: number
           end_time?: string
+          equipment_code?: string | null
           id?: string
+          incident_category?: string | null
           line_id?: string
           machine_id?: string | null
+          maintenance_type?: string | null
           reason?: string
           reported_by_employee_id?: string | null
           shift_id?: string
+          shutdown_type?: string | null
           start_time?: string
           status?: string
         }
@@ -1679,6 +1691,8 @@ export type Database = {
           total_downtime_hours: number
           updated_at: string
           verified_by: string | null
+          warehouse_synced: boolean
+          warehouse_synced_at: string | null
         }
         Insert: {
           actual_capacity_tph?: number | null
@@ -1704,6 +1718,8 @@ export type Database = {
           total_downtime_hours?: number
           updated_at?: string
           verified_by?: string | null
+          warehouse_synced?: boolean
+          warehouse_synced_at?: string | null
         }
         Update: {
           actual_capacity_tph?: number | null
@@ -1729,6 +1745,8 @@ export type Database = {
           total_downtime_hours?: number
           updated_at?: string
           verified_by?: string | null
+          warehouse_synced?: boolean
+          warehouse_synced_at?: string | null
         }
         Relationships: [
           {

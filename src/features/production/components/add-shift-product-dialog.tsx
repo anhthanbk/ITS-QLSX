@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Plus, Package } from 'lucide-react';
+import { X, Plus, Package, Warehouse as WarehouseIcon, MapPin } from 'lucide-react';
 import { useProductsCatalog } from '@/features/warehouse/hooks/use-products-catalog';
+import { useWarehouses } from '@/features/warehouse/hooks/use-warehouses';
 import type { ShiftProductOutput } from '../types';
 
 interface AddShiftProductDialogProps {
@@ -16,9 +17,14 @@ export const AddShiftProductDialog: React.FC<AddShiftProductDialogProps> = ({
   onAdd,
   existingProductIds = [],
 }) => {
-  // Existing products from catalog (only select from master catalog, cannot create new products here)
+  // Existing products from catalog
   const { data: productsData, isLoading } = useProductsCatalog({ page: 1, pageSize: 100 });
+  const { data: warehousesData } = useWarehouses({ page: 1, pageSize: 50 });
+  const warehousesList = warehousesData?.data || [];
+
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState('');
+  const [storageLocation, setStorageLocation] = useState('');
   const [existingQty, setExistingQty] = useState<number>(0);
 
   if (!isOpen) return null;
@@ -33,6 +39,8 @@ export const AddShiftProductDialog: React.FC<AddShiftProductDialogProps> = ({
   const handleAddExisting = () => {
     if (!selectedProduct) return;
 
+    const wh = warehousesList.find((w) => w.id === selectedWarehouseId);
+
     onAdd({
       product_id: selectedProduct.id,
       product_name: selectedProduct.name,
@@ -41,6 +49,9 @@ export const AddShiftProductDialog: React.FC<AddShiftProductDialogProps> = ({
       unit_of_measure: selectedProduct.unit_of_measure || 'tấn',
       is_out_of_plan: true,
       quantity_tons: Number(existingQty) || 0,
+      warehouse_id: selectedWarehouseId || null,
+      warehouse_name: wh?.name || null,
+      storage_location: storageLocation.trim() || null,
     });
     onClose();
   };
@@ -119,6 +130,41 @@ export const AddShiftProductDialog: React.FC<AddShiftProductDialogProps> = ({
               </div>
             </div>
           )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-foreground flex items-center gap-1">
+                <WarehouseIcon className="h-3 w-3 text-muted-foreground" />
+                Kho nhập hàng
+              </label>
+              <select
+                value={selectedWarehouseId}
+                onChange={(e) => setSelectedWarehouseId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:ring-1 focus:ring-primary"
+              >
+                <option value="">-- Chọn kho nhập --</option>
+                {warehousesList.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    [{w.code}] {w.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-foreground flex items-center gap-1">
+                <MapPin className="h-3 w-3 text-muted-foreground" />
+                Vị trí nhập / Bãi
+              </label>
+              <input
+                type="text"
+                value={storageLocation}
+                onChange={(e) => setStorageLocation(e.target.value)}
+                placeholder="VD: Bãi 4K, Silo 1..."
+                className="mt-1 w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
 
           <div>
             <label className="block text-xs font-semibold text-foreground">
