@@ -1,7 +1,7 @@
 import React from 'react';
 import { Eye, Edit, Trash2, ChevronLeft, ChevronRight, CheckCircle2, PackageCheck } from 'lucide-react';
 import type { ProductionShift } from '../types';
-import { isFinishedProduct } from '../types';
+import { isFinishedProduct, isSemiFinishedProduct } from '../types';
 import { cn } from '@/lib/utils';
 
 interface ProductionShiftTableProps {
@@ -228,16 +228,33 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                 return Number(shift.product_output_tons || 0);
               })();
 
+              // Bán thành phẩm: tính riêng
+              const semiFinishedOutput = (() => {
+                if (Array.isArray(shift.products_output) && shift.products_output.length > 0) {
+                  return shift.products_output.reduce((acc, p) => {
+                    return isSemiFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+                  }, 0);
+                }
+                return 0;
+              })();
+
               // Công suất = Nguyên liệu cấp / Giờ chạy (TPH)
               const actualCapacity =
                 runHours > 0 && rawInput > 0
                   ? Number((rawInput / runHours).toFixed(1))
                   : (shift.actual_capacity_tph && shift.actual_capacity_tph > 0 ? Number(shift.actual_capacity_tph) : 0);
 
-              // Năng suất = Sản lượng thành phẩm / Giờ chạy (TPH)
+              // Năng suất = Sản lượng (thành phẩm hoặc bán thành phẩm) / Giờ chạy (TPH)
+              const effectiveOutputForProductivity = finishedOutput > 0 ? finishedOutput : semiFinishedOutput;
               const actualProductivity =
-                runHours > 0 && finishedOutput > 0
-                  ? Number((finishedOutput / runHours).toFixed(1))
+                runHours > 0 && effectiveOutputForProductivity > 0
+                  ? Number((effectiveOutputForProductivity / runHours).toFixed(1))
+                  : 0;
+
+              // Thu hồi BTP riêng
+              const actualSemiRecovery =
+                rawInput > 0 && semiFinishedOutput > 0
+                  ? Number(((semiFinishedOutput / rawInput) * 100).toFixed(2))
                   : 0;
 
               // Thu hồi = Thành phẩm / Nguyên liệu * 100%
@@ -415,21 +432,50 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                     )}
                   </td>
 
-                  {/* 6. Thu hồi (= sản lượng thành phẩm / nguyên liệu) */}
+                  {/* 6. Thu hồi (= sản lượng thành phẩm / nguyên liệu, tính riêng BTP nếu là ca bán thành phẩm) */}
                   <td className="px-3 py-3 text-center">
-                    {renderMetricCell(
-                      `${actualRecovery}%`,
-                      '',
-                      isRecMet,
+                    {finishedOutput > 0 ? (
+                      renderMetricCell(
+                        `${actualRecovery}%`,
+                        '',
+                        isRecMet,
+                      )
+                    ) : semiFinishedOutput > 0 ? (
+                      renderMetricCell(
+                        `${actualSemiRecovery}%`,
+                        'BTP',
+                        actualSemiRecovery >= effectivePlannedRecovery,
+                      )
+                    ) : (
+                      renderMetricCell(
+                        `${actualRecovery}%`,
+                        '',
+                        isRecMet,
+                      )
                     )}
                   </td>
 
-                  {/* 7. Sản lượng: chỉ tính thành phẩm */}
+                  {/* 7. Sản lượng: hiển thị thành phẩm và bán thành phẩm nếu có */}
                   <td className="px-3 py-3 text-center">
-                    {renderMetricCell(
-                      finishedOutput.toLocaleString('vi-VN'),
-                      'T',
-                      isOutputMet,
+                    {finishedOutput > 0 ? (
+                      renderMetricCell(
+                        finishedOutput.toLocaleString('vi-VN'),
+                        'T',
+                        isOutputMet,
+                      )
+                    ) : semiFinishedOutput > 0 ? (
+                      <div className="flex flex-col items-center">
+                        <span className="font-bold text-amber-600 dark:text-amber-400">
+                          {semiFinishedOutput.toLocaleString('vi-VN')}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">T (BTP)</span>
+                      </div>
+                    ) : (
+                      renderMetricCell(
+                        '0',
+                        'T',
+                        false,
+                      )
                     )}
                   </td>
 

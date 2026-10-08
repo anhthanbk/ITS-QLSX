@@ -104,7 +104,7 @@ export type TechnoEconomicNormFormValues = z.infer<typeof technoEconomicNormSche
 export const shiftMaterialConsumptionSchema = z.object({
   material_id: z.string().optional(),
   resource_name: z.string().min(1, 'Tên nguyên nhiên liệu không được để trống'),
-  category: z.enum(['material', 'fuel', 'supply']).default('material'),
+  category: z.enum(['material', 'fuel', 'supply', 'semi_finished', 'energy']).default('material'),
   unit_of_measure: z.string().default('tấn'),
   planned_norm: z.number().optional().default(0),
   actual_quantity: z

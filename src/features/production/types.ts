@@ -115,7 +115,7 @@ export type ShiftStatus = 'in_progress' | 'completed' | 'verified';
 export interface ShiftMaterialConsumption {
   material_id?: string;
   resource_name: string;
-  category: 'material' | 'fuel' | 'supply';
+  category: 'material' | 'fuel' | 'energy' | 'supply' | 'semi_finished';
   unit_of_measure: string;
   planned_norm?: number;
   actual_quantity: number;
@@ -221,6 +221,7 @@ export interface BatchShiftWarehouseSyncItem {
 export interface BatchShiftWarehouseSyncPayload {
   selected_shift_ids: string[];
   products: BatchShiftWarehouseSyncItem[];
+  semi_finished_products?: BatchShiftWarehouseSyncItem[];
   byproducts: BatchShiftWarehouseSyncItem[];
   materials: BatchShiftWarehouseSyncItem[];
   notes?: string | null;
@@ -440,7 +441,7 @@ export interface ProductionMetrics {
 // 6. ANNUAL PRODUCTION PLANNING (LẬP KẾ HOẠCH SẢN XUẤT NĂM)
 // ==========================================
 
-export type MaterialCategoryGroup = 'material' | 'fuel' | 'supply';
+export type MaterialCategoryGroup = 'material' | 'fuel' | 'energy' | 'supply';
 
 export type PlanProductClassification = 'finished_good' | 'semi_finished' | 'by_product';
 
@@ -526,6 +527,78 @@ export function normalizeProductType(type?: string | null): PlanProductClassific
  * Kiểm tra xem một sản phẩm có phải là sản phẩm / thành phẩm chính hay không.
  * Loại trừ hoàn toàn phụ phẩm, bán thành phẩm (MM, Magmin, VFS, FSAP, v.v.).
  */
+/**
+ * Kiểm tra xem một sản phẩm có phải là Phụ phẩm (Byproduct) hay không.
+ * Danh mục phụ phẩm thực tế tại nhà máy: MM, MAGMIN, VFS, FSAP,...
+ */
+export function isByProduct(item?: {
+  product_sku?: string | null;
+  product_name?: string | null;
+  product_type?: string | null;
+}): boolean {
+  if (!item) return false;
+
+  if (item.product_type) {
+    const norm = normalizeProductType(item.product_type);
+    if (norm === 'by_product') return true;
+    if (norm === 'semi_finished' || norm === 'finished_good') return false;
+  }
+
+  const sku = (item.product_sku || '').trim().toLowerCase();
+  const name = (item.product_name || '').trim().toLowerCase();
+
+  return (
+    sku === 'mm' ||
+    sku === 'magmin' ||
+    sku === 'vfs' ||
+    sku === 'fsap' ||
+    sku.startsWith('mm-') ||
+    sku.endsWith('-mm') ||
+    name.includes('phụ phẩm') ||
+    name.includes('magmin') ||
+    name.includes('vfs') ||
+    name.includes('fsap')
+  );
+}
+
+/**
+ * Kiểm tra xem một sản phẩm có phải là Bán thành phẩm (Semi-finished good) hay không.
+ * Bán thành phẩm được tính thu hồi riêng, không tính vào nguyên liệu hoặc thành phẩm.
+ * Lưu ý: Phụ phẩm (FSAP, VFS, MAGMIN) TUYỆT ĐỐI không phải là bán thành phẩm.
+ */
+export function isSemiFinishedProduct(item?: {
+  product_sku?: string | null;
+  product_name?: string | null;
+  product_type?: string | null;
+}): boolean {
+  if (!item) return false;
+
+  if (item.product_type) {
+    const norm = normalizeProductType(item.product_type);
+    if (norm === 'semi_finished') return true;
+    if (norm === 'by_product' || norm === 'finished_good') return false;
+  }
+
+  // Nếu đã là phụ phẩm theo SKU/tên thì không bao giờ là bán thành phẩm
+  if (isByProduct(item)) {
+    return false;
+  }
+
+  const sku = (item.product_sku || '').trim().toLowerCase();
+  const name = (item.product_name || '').trim().toLowerCase();
+
+  return (
+    sku.startsWith('btp') ||
+    sku.includes('btp') ||
+    sku.includes('semi') ||
+    name.includes('bán thành phẩm')
+  );
+}
+
+/**
+ * Kiểm tra xem một sản phẩm có phải là sản phẩm / thành phẩm chính hay không.
+ * Loại trừ hoàn toàn phụ phẩm và bán thành phẩm.
+ */
 export function isFinishedProduct(item?: {
   product_sku?: string | null;
   product_name?: string | null;
@@ -543,10 +616,14 @@ export function isFinishedProduct(item?: {
     }
   }
 
+  // Không phải phụ phẩm và không phải bán thành phẩm
+  if (isByProduct(item) || isSemiFinishedProduct(item)) {
+    return false;
+  }
+
   const sku = (item.product_sku || '').trim().toLowerCase();
   const name = (item.product_name || '').trim().toLowerCase();
 
-  // Danh mục phụ phẩm thực tế tại nhà máy: MM, MAGMIN, VFS, FSAP
   if (
     sku === 'mm' ||
     sku === 'magmin' ||
@@ -554,12 +631,14 @@ export function isFinishedProduct(item?: {
     sku === 'fsap' ||
     sku.startsWith('mm-') ||
     sku.endsWith('-mm') ||
+    sku.startsWith('btp') ||
+    sku.includes('btp') ||
+    sku.includes('semi') ||
     sku.includes('magmin') ||
     sku.includes('vfs') ||
     sku.includes('fsap') ||
     name.includes('phụ phẩm') ||
     name.includes('bán thành phẩm') ||
-    name.includes('sau chế biến') ||
     name.includes('magmin') ||
     name.includes('vfs') ||
     name.includes('fsap')

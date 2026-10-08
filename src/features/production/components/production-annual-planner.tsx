@@ -1713,17 +1713,21 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                       ) : (
                         aggregateCalculations.aggregateMaterials.map((mat) => {
                           const groupLabel =
-                            mat.categoryGroup === 'material'
-                              ? 'Nguyên liệu'
-                              : mat.categoryGroup === 'fuel'
-                                ? 'Nhiên liệu'
-                                : 'Vật tư phụ';
+                            mat.categoryGroup === 'energy' || mat.materialKey.toLowerCase().includes('điện')
+                              ? 'Năng lượng'
+                              : mat.categoryGroup === 'material'
+                                ? 'Nguyên liệu'
+                                : mat.categoryGroup === 'fuel'
+                                  ? 'Nhiên liệu'
+                                  : 'Vật tư phụ';
                           const badgeClass =
-                            mat.categoryGroup === 'material'
-                              ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                              : mat.categoryGroup === 'fuel'
-                                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+                            mat.categoryGroup === 'energy' || mat.materialKey.toLowerCase().includes('điện')
+                              ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-300'
+                              : mat.categoryGroup === 'material'
+                                ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                : mat.categoryGroup === 'fuel'
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
 
                           return (
                             <tr key={mat.materialKey} className="hover:bg-muted/10 transition-colors">
@@ -2127,18 +2131,22 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                                   <span
                                     className={cn(
                                       'rounded px-1.5 py-0.5 text-[9px] font-semibold',
-                                      mat.categoryGroup === 'material'
-                                        ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                                        : mat.categoryGroup === 'fuel'
-                                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                          : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+                                      mat.categoryGroup === 'energy' || mat.materialName.toLowerCase().includes('điện')
+                                        ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-300'
+                                        : mat.categoryGroup === 'material'
+                                          ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                          : mat.categoryGroup === 'fuel'
+                                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                            : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
                                     )}
                                   >
-                                    {mat.categoryGroup === 'material'
-                                      ? 'Nguyên liệu'
-                                      : mat.categoryGroup === 'fuel'
-                                        ? 'Nhiên liệu'
-                                        : 'Vật tư phụ'}
+                                    {mat.categoryGroup === 'energy' || mat.materialName.toLowerCase().includes('điện')
+                                      ? 'Năng lượng'
+                                      : mat.categoryGroup === 'material'
+                                        ? 'Nguyên liệu'
+                                        : mat.categoryGroup === 'fuel'
+                                          ? 'Nhiên liệu'
+                                          : 'Vật tư phụ'}
                                   </span>
                                 </div>
                               </td>
@@ -2591,19 +2599,23 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                             (acc, val) => acc + (Number(val) || 0),
                             0,
                           );
-                          const groupLabel =
-                            mat.categoryGroup === 'material'
-                              ? 'Nguyên liệu'
-                              : mat.categoryGroup === 'fuel'
-                                ? 'Nhiên liệu'
-                                : 'Vật tư phụ';
-                          const badgeClass =
-                            mat.categoryGroup === 'material'
-                              ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                              : mat.categoryGroup === 'fuel'
-                                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
                           const isElectricity = mat.materialId === 'default-electricity';
+                          const groupLabel =
+                            mat.categoryGroup === 'energy' || isElectricity || mat.materialName.toLowerCase().includes('điện')
+                              ? 'Năng lượng'
+                              : mat.categoryGroup === 'material'
+                                ? 'Nguyên liệu'
+                                : mat.categoryGroup === 'fuel'
+                                  ? 'Nhiên liệu'
+                                  : 'Vật tư phụ';
+                          const badgeClass =
+                            mat.categoryGroup === 'energy' || isElectricity || mat.materialName.toLowerCase().includes('điện')
+                              ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-300'
+                              : mat.categoryGroup === 'material'
+                                ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                : mat.categoryGroup === 'fuel'
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
 
                           return (
                             <tr key={mat.materialId} className="hover:bg-muted/10 transition-colors">
@@ -3127,18 +3139,22 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                                   <span
                                     className={cn(
                                       'rounded px-1.5 py-0.5 text-[9px] font-semibold',
-                                      mat.categoryGroup === 'material'
-                                        ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                                        : mat.categoryGroup === 'fuel'
-                                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                          : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+                                      mat.categoryGroup === 'energy' || mat.materialName.toLowerCase().includes('điện')
+                                        ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-300'
+                                        : mat.categoryGroup === 'material'
+                                          ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                          : mat.categoryGroup === 'fuel'
+                                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                            : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
                                     )}
                                   >
-                                    {mat.categoryGroup === 'material'
-                                      ? 'Nguyên liệu'
-                                      : mat.categoryGroup === 'fuel'
-                                        ? 'Nhiên liệu'
-                                        : 'Vật tư phụ'}
+                                    {mat.categoryGroup === 'energy' || mat.materialName.toLowerCase().includes('điện')
+                                      ? 'Năng lượng'
+                                      : mat.categoryGroup === 'material'
+                                        ? 'Nguyên liệu'
+                                        : mat.categoryGroup === 'fuel'
+                                          ? 'Nhiên liệu'
+                                          : 'Vật tư phụ'}
                                   </span>
                                 </div>
                                 {mat.materialCode && (

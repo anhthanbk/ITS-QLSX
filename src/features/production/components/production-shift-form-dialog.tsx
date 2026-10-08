@@ -28,7 +28,7 @@ import {
   productionShiftSchema,
   type ProductionShiftFormValues,
 } from '../validation/production-schemas';
-import { isFinishedProduct, type ProductionShift, type ProductionLine, type ShiftProductOutput, type ShiftDowntimeEvent } from '../types';
+import { isFinishedProduct, isSemiFinishedProduct, isByProduct, type ProductionShift, type ProductionLine, type ShiftProductOutput, type ShiftDowntimeEvent } from '../types';
 import { useShiftPlanContext } from '../hooks/use-production-shifts';
 import { useWarehouses } from '@/features/warehouse/hooks/use-warehouses';
 import { useMachineOptions } from '@/features/maintenance/hooks/use-machines';
@@ -387,10 +387,19 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
     );
   }, [watchProducts]);
 
+  // Auto sum semi-finished products (tính riêng, không tính vào nguyên liệu hoặc thành phẩm)
+  const totalSemiFinishedOutput = useMemo(() => {
+    return Number(
+      watchProducts
+        .reduce((sum, p) => (isSemiFinishedProduct(p) ? sum + (Number(p.quantity_tons) || 0) : sum), 0)
+        .toFixed(2),
+    );
+  }, [watchProducts]);
+
   const totalByproductOutput = useMemo(() => {
     return Number(
       watchProducts
-        .reduce((sum, p) => (!isFinishedProduct(p) ? sum + (Number(p.quantity_tons) || 0) : sum), 0)
+        .reduce((sum, p) => (isByProduct(p) ? sum + (Number(p.quantity_tons) || 0) : sum), 0)
         .toFixed(2),
     );
   }, [watchProducts]);
@@ -416,15 +425,23 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
     );
   }, [watchedRawInput, rawWatchedMaterials]);
 
+  // Thu hồi thành phẩm
   const recoveryRate = useMemo(() => {
     if (totalRawInput <= 0) return 0;
     return Number(((totalFinishedOutput / totalRawInput) * 100).toFixed(2));
   }, [totalFinishedOutput, totalRawInput]);
 
+  // Thu hồi bán thành phẩm (tính riêng biệt)
+  const semiRecoveryRate = useMemo(() => {
+    if (totalRawInput <= 0) return 0;
+    return Number(((totalSemiFinishedOutput / totalRawInput) * 100).toFixed(2));
+  }, [totalSemiFinishedOutput, totalRawInput]);
+
   const productivityTPH = useMemo(() => {
     if (runningHours <= 0) return 0;
-    return Number((totalFinishedOutput / runningHours).toFixed(2));
-  }, [totalFinishedOutput, runningHours]);
+    const effectiveOutput = totalFinishedOutput > 0 ? totalFinishedOutput : totalSemiFinishedOutput;
+    return Number((effectiveOutput / runningHours).toFixed(2));
+  }, [totalFinishedOutput, totalSemiFinishedOutput, runningHours]);
 
   // Keep total_downtime_hours and product_output_tons in sync
   useEffect(() => {
@@ -463,19 +480,47 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
   const { data: warehousesData } = useWarehouses({ page: 1, pageSize: 50 });
   const warehousesList = warehousesData?.data || [];
 
-  // Fetch materials catalog for unit pre-filling and selection
+  // Fetch materials catalog and semi-finished products for selection
   const { data: materialsCatalog = [] } = useQuery({
-    queryKey: ['materials-catalog-options'],
+    queryKey: ['materials-and-semi-catalog-options'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('materials')
-        .select('id, code, name, category, unit_of_measure')
-        .order('name');
-      if (error) {
-        console.error('Error fetching materials catalog:', error);
-        return [];
-      }
-      return data || [];
+      const [matsRes, prodsRes] = await Promise.all([
+        supabase
+          .from('materials')
+          .select('id, code, name, category, unit_of_measure')
+          .order('name'),
+        supabase
+          .from('products')
+          .select('id, sku, name, product_type, unit_of_measure')
+          .order('name'),
+      ]);
+
+      const mats = (matsRes.data || []).map((m) => ({
+        id: m.id,
+        code: m.code,
+        name: m.name,
+        category: m.category,
+        unit_of_measure: m.unit_of_measure,
+        is_semi_finished: false,
+      }));
+
+      // Bán thành phẩm từ danh mục sản phẩm để dùng làm nguyên liệu tiêu hao cho chuyền sau
+      const semiProds = (prodsRes.data || [])
+        .filter((p) => {
+          const type = (p.product_type || '').toLowerCase();
+          const name = (p.name || '').toLowerCase();
+          return type === 'semi_finished' || name.includes('bán thành phẩm') || name.includes('btp');
+        })
+        .map((p) => ({
+          id: p.id,
+          code: p.sku || 'BTP',
+          name: p.name,
+          category: 'semi_finished',
+          unit_of_measure: p.unit_of_measure || 'Tấn',
+          is_semi_finished: true,
+        }));
+
+      return [...mats, ...semiProds];
     },
     staleTime: 60 * 1000,
   });
@@ -632,7 +677,8 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
               product_id: p.productId,
               product_name: p.productName,
               product_sku: p.productSku,
-              unitOfMeasure: p.unitOfMeasure,
+              product_type: (p as unknown as { productType?: string }).productType || 'finished_good',
+              unit_of_measure: p.unitOfMeasure,
               is_out_of_plan: false,
               quantity_tons: 0,
             }))
@@ -713,6 +759,7 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
           product_id: p.productId,
           product_name: p.productName,
           product_sku: p.productSku,
+          product_type: (p as unknown as { productType?: string }).productType || 'finished_good',
           unit_of_measure: p.unitOfMeasure,
           is_out_of_plan: false,
           quantity_tons: 0,
@@ -754,7 +801,11 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
       material_id: firstMat?.id,
       resource_name: firstMat?.name || 'Vật tư / Nhiên liệu mới',
       category:
-        firstMat?.category === 'raw_material'
+        firstMat?.category === 'semi_finished' || (firstMat as { is_semi_finished?: boolean })?.is_semi_finished
+          ? 'semi_finished'
+          : isElectricityResource(firstMat?.name, firstMat?.unit_of_measure)
+          ? 'energy'
+          : firstMat?.category === 'raw_material'
           ? 'material'
           : firstMat?.category === 'fuel_energy'
           ? 'fuel'
@@ -826,8 +877,11 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
     const finishedSum = prods.reduce((acc, p) => {
       return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
     }, 0);
+    const semiFinishedSum = prods.reduce((acc, p) => {
+      return isSemiFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+    }, 0);
     const byproductSum = prods.reduce((acc, p) => {
-      return !isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+      return isByProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
     }, 0);
 
     const mats = values.materials_consumption || [];
@@ -876,11 +930,17 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
       operator_name: finalOperatorName,
     };
 
+    const finalRecovery =
+      finalRawInput > 0
+        ? Number((((finalFinished > 0 ? finalFinished : semiFinishedSum) / finalRawInput) * 100).toFixed(2))
+        : 0;
+
     await onSubmit({
       ...values,
       operator_name: finalOperatorName,
       shift_date: isRange ? fromDate : values.shift_date,
       shift_number: isRange ? 1 : values.shift_number,
+      actual_recovery_rate_pct: finalRecovery,
       raw_material_input_tons: finalRawInput,
       product_output_tons: finalFinished,
       byproduct_output_tons: finalByproduct,
@@ -1213,11 +1273,19 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                   </div>
                   <div className="mt-1">
                     <span className="text-base font-extrabold text-indigo-600 dark:text-indigo-400">
-                      {recoveryRate.toFixed(1)}%
+                      {totalFinishedOutput > 0
+                        ? `${recoveryRate.toFixed(1)}%`
+                        : totalSemiFinishedOutput > 0
+                        ? `${semiRecoveryRate.toFixed(1)}% (BTP)`
+                        : '0.0%'}
                     </span>
                   </div>
                   <div className="mt-0.5 text-[10px] text-muted-foreground">
-                    Định mức: <span className="font-semibold text-foreground">83.75%</span>
+                    {totalSemiFinishedOutput > 0 && totalFinishedOutput > 0 ? (
+                      <>Thu hồi BTP riêng: <span className="font-semibold text-amber-600 dark:text-amber-400">{semiRecoveryRate.toFixed(1)}%</span></>
+                    ) : (
+                      <>Định mức: <span className="font-semibold text-foreground">83.75%</span></>
+                    )}
                   </div>
                 </div>
 
@@ -1326,7 +1394,6 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                             {productFields.map((field, idx) => {
                               const item = watchProducts[idx] || {};
                               const isOutOfPlan = watch(`products_output.${idx}.is_out_of_plan`);
-                              const isFinished = isFinishedProduct(item);
                               return (
                                 <tr key={field.id} className="hover:bg-muted/20">
                                   <td className="px-3 py-2.5 font-mono font-medium text-foreground">
@@ -1346,7 +1413,11 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                           Trong KH
                                         </span>
                                       )}
-                                      {isFinished ? (
+                                      {isSemiFinishedProduct(item) ? (
+                                        <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                          Bán thành phẩm
+                                        </span>
+                                      ) : isFinishedProduct(item) ? (
                                         <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
                                           Thành phẩm
                                         </span>
@@ -1420,19 +1491,30 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                 Tổng sản lượng thành phẩm thu hồi:
                               </td>
                               <td className="px-3 py-2.5 text-right text-sm text-emerald-600 dark:text-emerald-400">
-                                {totalFinishedOutput.toLocaleString()} Tấn
+                                {totalFinishedOutput.toLocaleString()} Tấn {recoveryRate > 0 && <span className="text-xs font-normal text-muted-foreground">({recoveryRate}% thu hồi)</span>}
                               </td>
                               <td colSpan={3}></td>
                             </tr>
+                            {totalSemiFinishedOutput > 0 && (
+                              <tr className="border-t border-border/50 text-xs">
+                                <td colSpan={4} className="px-3 py-2 text-right font-medium text-amber-700 dark:text-amber-400">
+                                  Tổng sản lượng bán thành phẩm thu hồi (tính riêng):
+                                </td>
+                                <td className="px-3 py-2 text-right text-sm font-bold text-amber-600 dark:text-amber-400">
+                                  {totalSemiFinishedOutput.toLocaleString()} Tấn {semiRecoveryRate > 0 && <span className="text-xs font-normal text-muted-foreground">({semiRecoveryRate}% thu hồi BTP)</span>}
+                                </td>
+                                <td colSpan={3}></td>
+                              </tr>
+                            )}
                             {totalByproductOutput > 0 && (
                               <tr className="border-t border-border/50 text-xs">
                                 <td colSpan={4} className="px-3 py-1.5 text-right text-muted-foreground font-normal">
-                                  Tổng sản lượng phụ phẩm (không tính vào TP):
+                                  Tổng sản lượng phụ phẩm (không tính vào TP/BTP):
                                 </td>
                                 <td className="px-3 py-1.5 text-right font-semibold text-purple-600 dark:text-purple-400">
                                   {totalByproductOutput.toLocaleString()} Tấn
                                 </td>
-                                <td></td>
+                                <td colSpan={3}></td>
                               </tr>
                             )}
                           </tfoot>
@@ -1506,9 +1588,14 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                           if (matched.unit_of_measure) {
                                             setValue(`materials_consumption.${idx}.unit_of_measure`, matched.unit_of_measure);
                                           }
+                                          const isElec = isElectricityResource(val, matched.unit_of_measure || watch(`materials_consumption.${idx}.unit_of_measure`));
                                           setValue(
                                             `materials_consumption.${idx}.category`,
-                                            matched.category === 'raw_material'
+                                            matched.category === 'semi_finished' || (matched as { is_semi_finished?: boolean }).is_semi_finished
+                                              ? 'semi_finished'
+                                              : isElec
+                                              ? 'energy'
+                                              : matched.category === 'raw_material'
                                               ? 'material'
                                               : matched.category === 'fuel_energy'
                                               ? 'fuel'
@@ -1523,22 +1610,30 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                           setValue(`materials_consumption.${idx}.warehouse_name`, null);
                                         }
                                       }}
-                                      placeholder="Chọn hoặc nhập tên vật tư..."
+                                      placeholder="Chọn hoặc nhập tên vật tư / bán thành phẩm..."
                                       className="w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs font-semibold text-foreground focus:bg-background"
                                     />
                                   </td>
                                   <td className="px-3 py-2.5 text-center">
                                     <span
                                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                        cat === 'fuel'
+                                        cat === 'energy' || isElectricityResource(watch(`materials_consumption.${idx}.resource_name`), watch(`materials_consumption.${idx}.unit_of_measure`))
+                                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/60 dark:text-yellow-300'
+                                          : cat === 'semi_finished'
                                           ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                          : cat === 'fuel'
+                                          ? 'bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300'
                                           : cat === 'supply'
                                           ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
                                           : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                                       }`}
                                     >
-                                      {cat === 'fuel'
-                                        ? 'Nhiên liệu/Điện'
+                                      {cat === 'energy' || isElectricityResource(watch(`materials_consumption.${idx}.resource_name`), watch(`materials_consumption.${idx}.unit_of_measure`))
+                                        ? 'Năng lượng'
+                                        : cat === 'semi_finished'
+                                        ? 'Bán thành phẩm'
+                                        : cat === 'fuel'
+                                        ? 'Nhiên liệu'
                                         : cat === 'supply'
                                         ? 'Vật tư tiêu hao'
                                         : 'Nguyên liệu'}
@@ -2218,12 +2313,16 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                 <span className="inline-flex items-center gap-1 rounded bg-muted/70 px-2.5 py-1 text-[11px] font-medium border border-border/50">
                   Chạy máy: <strong className="text-primary">{runningHours}h</strong> / {stdHours}h
                 </span>
-                <span className="inline-flex items-center gap-1 rounded bg-muted/70 px-2.5 py-1 text-[11px] font-medium border border-border/50">
-                  TP chính: <strong className="text-emerald-600 dark:text-emerald-400">{totalFinishedOutput.toLocaleString('vi-VN')} Tấn</strong>
-                </span>
-                <span className="inline-flex items-center gap-1 rounded bg-muted/70 px-2.5 py-1 text-[11px] font-medium border border-border/50">
-                  Thu hồi: <strong className="text-foreground">{recoveryRate.toFixed(1)}%</strong>
-                </span>
+                {totalFinishedOutput > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded bg-muted/70 px-2.5 py-1 text-[11px] font-medium border border-border/50">
+                    TP chính: <strong className="text-emerald-600 dark:text-emerald-400">{totalFinishedOutput.toLocaleString('vi-VN')} Tấn</strong> ({recoveryRate.toFixed(1)}%)
+                  </span>
+                )}
+                {totalSemiFinishedOutput > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 text-[11px] font-medium border border-amber-200/50 dark:border-amber-900/50 text-amber-800 dark:text-amber-300">
+                    BTP riêng: <strong>{totalSemiFinishedOutput.toLocaleString('vi-VN')} Tấn</strong> ({semiRecoveryRate.toFixed(1)}%)
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button

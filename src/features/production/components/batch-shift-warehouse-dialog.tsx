@@ -15,7 +15,7 @@ import type {
   BatchShiftWarehouseSyncItem,
   BatchShiftWarehouseSyncPayload,
 } from '../types';
-import { isFinishedProduct } from '../types';
+import { isSemiFinishedProduct, isByProduct } from '../types';
 
 interface BatchShiftWarehouseDialogProps {
   isOpen: boolean;
@@ -50,8 +50,9 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
     [warehousesList],
   );
 
-  // Grouped Products & Byproducts state
-  const [productItems, setProductItems] = useState<BatchShiftWarehouseSyncItem[]>([]);
+  // Grouped Products, Semi-finished goods & Byproducts state
+  const [finishedItems, setFinishedItems] = useState<BatchShiftWarehouseSyncItem[]>([]);
+  const [semiFinishedItems, setSemiFinishedItems] = useState<BatchShiftWarehouseSyncItem[]>([]);
   const [byproductItems, setByproductItems] = useState<BatchShiftWarehouseSyncItem[]>([]);
   const [materialItems, setMaterialItems] = useState<BatchShiftWarehouseSyncItem[]>([]);
 
@@ -59,8 +60,9 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
   React.useEffect(() => {
     if (!isOpen || selectedShifts.length === 0) return;
 
-    // 1. Group products
-    const prodMap = new Map<string, BatchShiftWarehouseSyncItem>();
+    // 1. Group products, semi-finished goods & byproducts by (Item + Warehouse recorded in shifts)
+    const finishMap = new Map<string, BatchShiftWarehouseSyncItem>();
+    const semiMap = new Map<string, BatchShiftWarehouseSyncItem>();
     const bypMap = new Map<string, BatchShiftWarehouseSyncItem>();
 
     for (const shift of selectedShifts) {
@@ -69,27 +71,35 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
         const qty = Number(p.quantity_tons) || 0;
         if (qty <= 0) continue;
 
-        const isFG = isFinishedProduct(p);
-        const map = isFG ? prodMap : bypMap;
-        const key = p.product_id || p.product_sku || p.product_name;
+        const isSemi = isSemiFinishedProduct(p);
+        const isBP = isByProduct(p);
 
-        const existing = map.get(key);
+        // Phân loại: Phụ phẩm -> Bán thành phẩm -> Thành phẩm
+        const map = isBP ? bypMap : isSemi ? semiMap : finishMap;
+        const itemType = isBP ? 'byproduct' : 'product';
+        const itemBaseKey = p.product_id || p.product_sku || p.product_name;
+        // Gom nhóm theo mặt hàng VÀ kho mà nhập liệu các ca đã ghi (nếu ca nhập vào 2 kho thì thành 2 dòng riêng biệt)
+        const shiftWhId = p.warehouse_id || '';
+        const groupKey = `${itemBaseKey}___${shiftWhId || 'unassigned'}`;
+
+        const existing = map.get(groupKey);
         if (existing) {
-          existing.total_quantity += qty;
+          existing.total_quantity = Number((existing.total_quantity + qty).toFixed(2));
           if (!existing.shift_ids.includes(shift.id)) existing.shift_ids.push(shift.id);
           if (!existing.shift_codes.includes(shift.shift_code)) existing.shift_codes.push(shift.shift_code);
-          if (p.warehouse_id && !existing.warehouse_id) existing.warehouse_id = p.warehouse_id;
           if (p.storage_location && !existing.storage_location) existing.storage_location = p.storage_location;
         } else {
-          map.set(key, {
-            id: key,
-            item_type: isFG ? 'product' : 'byproduct',
+          // Gán kho đích theo đúng kho mà nhập liệu ca đã ghi; nếu chưa ghi thì fallback kho mặc định
+          const defaultTargetWh = shiftWhId || (isBP ? defaultByproductWh : defaultFinishedGoodsWh);
+          map.set(groupKey, {
+            id: groupKey,
+            item_type: itemType,
             item_id: p.product_id || '',
             item_code: p.product_sku || '---',
             item_name: p.product_name,
             unit_of_measure: p.unit_of_measure || 'Tấn',
-            total_quantity: qty,
-            warehouse_id: p.warehouse_id || (isFG ? defaultFinishedGoodsWh : defaultByproductWh),
+            total_quantity: Number(qty.toFixed(2)),
+            warehouse_id: defaultTargetWh,
             storage_location: p.storage_location || null,
             shift_ids: [shift.id],
             shift_codes: [shift.shift_code],
@@ -98,7 +108,7 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
       }
     }
 
-    // 2. Group materials
+    // 2. Group materials by (Material + Warehouse recorded in shifts)
     const matMap = new Map<string, BatchShiftWarehouseSyncItem>();
 
     for (const shift of selectedShifts) {
@@ -113,25 +123,28 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
           continue;
         }
 
-        const key = m.material_id || m.resource_name;
-        const isRaw = m.category === 'material' || nameLower.includes('nguyên khai') || nameLower.includes('quặng');
+        const matBaseKey = m.material_id || m.resource_name;
+        const shiftMatWhId = m.warehouse_id || '';
+        const groupKey = `${matBaseKey}___${shiftMatWhId || 'unassigned'}`;
 
-        const existing = matMap.get(key);
+        const isRaw = m.category === 'material' || nameLower.includes('nguyên khai') || nameLower.includes('quặng');
+        const isSemiMat = m.category === 'semi_finished' || nameLower.includes('bán thành phẩm');
+
+        const existing = matMap.get(groupKey);
         if (existing) {
-          existing.total_quantity += qty;
+          existing.total_quantity = Number((existing.total_quantity + qty).toFixed(2));
           if (!existing.shift_ids.includes(shift.id)) existing.shift_ids.push(shift.id);
           if (!existing.shift_codes.includes(shift.shift_code)) existing.shift_codes.push(shift.shift_code);
-          if (m.warehouse_id && !existing.warehouse_id) existing.warehouse_id = m.warehouse_id;
         } else {
-          matMap.set(key, {
-            id: key,
+          matMap.set(groupKey, {
+            id: groupKey,
             item_type: 'material',
             item_id: m.material_id || '',
-            item_code: key,
-            item_name: m.resource_name,
+            item_code: matBaseKey,
+            item_name: m.resource_name + (isSemiMat ? ' (Bán thành phẩm)' : ''),
             unit_of_measure: m.unit_of_measure || 'Tấn',
-            total_quantity: qty,
-            warehouse_id: m.warehouse_id || (isRaw ? defaultRawMaterialWh : defaultFinishedGoodsWh),
+            total_quantity: Number(qty.toFixed(2)),
+            warehouse_id: shiftMatWhId || (isRaw ? defaultRawMaterialWh : defaultFinishedGoodsWh),
             storage_location: null,
             shift_ids: [shift.id],
             shift_codes: [shift.shift_code],
@@ -140,21 +153,34 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
       }
     }
 
-    setProductItems(Array.from(prodMap.values()));
+    setFinishedItems(Array.from(finishMap.values()));
+    setSemiFinishedItems(Array.from(semiMap.values()));
     setByproductItems(Array.from(bypMap.values()));
     setMaterialItems(Array.from(matMap.values()));
   }, [isOpen, selectedShifts, defaultFinishedGoodsWh, defaultByproductWh, defaultRawMaterialWh]);
 
   if (!isOpen) return null;
 
-  const handleUpdateProductWh = (idx: number, warehouseId: string) => {
-    setProductItems((prev) =>
+  const handleUpdateFinishedWh = (idx: number, warehouseId: string) => {
+    setFinishedItems((prev) =>
       prev.map((item, i) => (i === idx ? { ...item, warehouse_id: warehouseId } : item)),
     );
   };
 
-  const handleUpdateProductLoc = (idx: number, location: string) => {
-    setProductItems((prev) =>
+  const handleUpdateFinishedLoc = (idx: number, location: string) => {
+    setFinishedItems((prev) =>
+      prev.map((item, i) => (i === idx ? { ...item, storage_location: location } : item)),
+    );
+  };
+
+  const handleUpdateSemiWh = (idx: number, warehouseId: string) => {
+    setSemiFinishedItems((prev) =>
+      prev.map((item, i) => (i === idx ? { ...item, warehouse_id: warehouseId } : item)),
+    );
+  };
+
+  const handleUpdateSemiLoc = (idx: number, location: string) => {
+    setSemiFinishedItems((prev) =>
       prev.map((item, i) => (i === idx ? { ...item, storage_location: location } : item)),
     );
   };
@@ -180,7 +206,8 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
   const handleSubmit = async () => {
     const payload: BatchShiftWarehouseSyncPayload = {
       selected_shift_ids: selectedShifts.map((s) => s.id),
-      products: productItems,
+      products: finishedItems,
+      semi_finished_products: semiFinishedItems,
       byproducts: byproductItems,
       materials: materialItems,
       notes: generalNotes.trim() || null,
@@ -196,10 +223,12 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
   };
 
   const totalShiftsCount = selectedShifts.length;
-  const totalFinishOutput = productItems.reduce((acc, p) => acc + p.total_quantity, 0);
+  const totalFinishOutput = finishedItems.reduce((acc, p) => acc + p.total_quantity, 0);
+  const totalSemiOutput = semiFinishedItems.reduce((acc, s) => acc + s.total_quantity, 0);
   const totalByproductOutput = byproductItems.reduce((acc, b) => acc + b.total_quantity, 0);
   const totalTxExpected =
-    productItems.filter((p) => p.warehouse_id).length +
+    finishedItems.filter((p) => p.warehouse_id).length +
+    semiFinishedItems.filter((s) => s.warehouse_id).length +
     byproductItems.filter((b) => b.warehouse_id).length +
     materialItems.filter((m) => m.warehouse_id).length;
 
@@ -265,7 +294,7 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
             </div>
           </div>
 
-          {/* SECTION 1: NHẬP THÀNH PHẨM & PHỤ PHẨM */}
+          {/* SECTION 1: NHẬP THÀNH PHẨM, BÁN THÀNH PHẨM & PHỤ PHẨM */}
           <div className="space-y-3">
             <div className="flex items-center justify-between border-b border-border pb-2">
               <div className="flex items-center gap-2">
@@ -273,20 +302,20 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
                   1
                 </span>
                 <h3 className="text-sm font-bold text-foreground">
-                  Giai đoạn 1: Nhập Thành phẩm & Phụ phẩm thu hồi
+                  Giai đoạn 1: Nhập Thành phẩm, Bán thành phẩm & Phụ phẩm thu hồi
                 </h3>
                 <span className="text-xs text-muted-foreground">
-                  ({productItems.length + byproductItems.length} mặt hàng • {totalFinishOutput.toLocaleString()} Tấn TP)
+                  ({finishedItems.length + semiFinishedItems.length + byproductItems.length} mặt hàng • {totalFinishOutput.toLocaleString()} Tấn TP{totalSemiOutput > 0 ? ` • ${totalSemiOutput.toLocaleString()} Tấn BTP` : ''})
                 </span>
               </div>
             </div>
 
-            {/* Finished Goods Table */}
-            {productItems.length > 0 && (
+            {/* 1. Finished Goods Table */}
+            {finishedItems.length > 0 && (
               <div className="space-y-1.5">
                 <div className="text-xs font-semibold text-foreground flex items-center gap-1">
                   <Package className="h-3.5 w-3.5 text-blue-500" />
-                  <span>Thành phẩm đạt chuẩn ({productItems.length})</span>
+                  <span>Thành phẩm đạt chuẩn ({finishedItems.length} • {totalFinishOutput.toLocaleString()} Tấn)</span>
                 </div>
                 <div className="overflow-x-auto rounded-xl border border-border">
                   <table className="w-full text-left text-xs">
@@ -300,13 +329,20 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {productItems.map((item, idx) => (
+                      {finishedItems.map((item, idx) => (
                         <tr key={item.id} className="hover:bg-muted/20">
                           <td className="px-3 py-2.5 font-mono font-bold text-foreground">
                             {item.item_code}
                           </td>
                           <td className="px-3 py-2.5 font-medium text-foreground">
-                            {item.item_name}
+                            <div className="flex flex-col">
+                              <span>{item.item_name}</span>
+                              {item.shift_codes && item.shift_codes.length > 0 && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  Ca: {item.shift_codes.join(', ')}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2.5 text-right font-bold text-emerald-600 dark:text-emerald-400">
                             {item.total_quantity.toLocaleString()} {item.unit_of_measure}
@@ -314,7 +350,7 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
                           <td className="px-3 py-2.5">
                             <select
                               value={item.warehouse_id}
-                              onChange={(e) => handleUpdateProductWh(idx, e.target.value)}
+                              onChange={(e) => handleUpdateFinishedWh(idx, e.target.value)}
                               className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:ring-1 focus:ring-primary font-medium"
                             >
                               <option value="">-- Chọn kho nhập --</option>
@@ -329,7 +365,7 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
                             <input
                               type="text"
                               value={item.storage_location || ''}
-                              onChange={(e) => handleUpdateProductLoc(idx, e.target.value)}
+                              onChange={(e) => handleUpdateFinishedLoc(idx, e.target.value)}
                               placeholder="VD: Bãi 4K, Silo..."
                               className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:ring-1 focus:ring-primary"
                             />
@@ -342,7 +378,78 @@ export const BatchShiftWarehouseDialog: React.FC<BatchShiftWarehouseDialogProps>
               </div>
             )}
 
-            {/* Byproducts Table */}
+            {/* 2. Semi-Finished Goods Table (Mục riêng cho Bán thành phẩm) */}
+            {semiFinishedItems.length > 0 && (
+              <div className="space-y-1.5 pt-2">
+                <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5 text-amber-500" />
+                  <span className="font-bold text-amber-700 dark:text-amber-400">Bán thành phẩm sản xuất ({semiFinishedItems.length} mặt hàng • {totalSemiOutput.toLocaleString()} Tấn)</span>
+                  <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                    Tính thu hồi riêng
+                  </span>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-amber-500/20 bg-amber-500/5">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-amber-500/10 font-semibold text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2 w-28">Mã SKU</th>
+                        <th className="px-3 py-2">Tên bán thành phẩm</th>
+                        <th className="px-3 py-2 text-right w-36">Tổng sản lượng</th>
+                        <th className="px-3 py-2 w-48">Kho nhập đích *</th>
+                        <th className="px-3 py-2 w-36">Vị trí / Bãi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border bg-card">
+                      {semiFinishedItems.map((item, idx) => (
+                        <tr key={item.id} className="hover:bg-amber-500/10">
+                          <td className="px-3 py-2.5 font-mono font-bold text-foreground">
+                            {item.item_code}
+                          </td>
+                          <td className="px-3 py-2.5 font-medium text-foreground">
+                            <div className="flex flex-col">
+                              <span>{item.item_name}</span>
+                              {item.shift_codes && item.shift_codes.length > 0 && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  Ca: {item.shift_codes.join(', ')}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-bold text-amber-600 dark:text-amber-400">
+                            {item.total_quantity.toLocaleString()} {item.unit_of_measure}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <select
+                              value={item.warehouse_id}
+                              onChange={(e) => handleUpdateSemiWh(idx, e.target.value)}
+                              className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:ring-1 focus:ring-primary font-medium"
+                            >
+                              <option value="">-- Chọn kho nhập --</option>
+                              {warehousesList.map((w) => (
+                                <option key={w.id} value={w.id}>
+                                  [{w.code}] {w.name}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="text"
+                              value={item.storage_location || ''}
+                              onChange={(e) => handleUpdateSemiLoc(idx, e.target.value)}
+                              placeholder="VD: Bãi BTP, Silo trung gian..."
+                              className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:ring-1 focus:ring-primary"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 3. Byproducts Table */}
             {byproductItems.length > 0 && (
               <div className="space-y-1.5 pt-2">
                 <div className="text-xs font-semibold text-foreground flex items-center gap-1">

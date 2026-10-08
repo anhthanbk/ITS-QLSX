@@ -2,7 +2,12 @@ import React, { useState } from 'react';
 import { X, Plus, Package, Warehouse as WarehouseIcon, MapPin } from 'lucide-react';
 import { useProductsCatalog } from '@/features/warehouse/hooks/use-products-catalog';
 import { useWarehouses } from '@/features/warehouse/hooks/use-warehouses';
-import type { ShiftProductOutput } from '../types';
+import {
+  type ShiftProductOutput,
+  isByProduct,
+  isSemiFinishedProduct,
+  normalizeProductType,
+} from '../types';
 
 interface AddShiftProductDialogProps {
   isOpen: boolean;
@@ -41,11 +46,21 @@ export const AddShiftProductDialog: React.FC<AddShiftProductDialogProps> = ({
 
     const wh = warehousesList.find((w) => w.id === selectedWarehouseId);
 
+    // Ưu tiên cao nhất là product_type khai báo từ danh mục kho/sản phẩm
+    let finalProductType: 'finished_good' | 'semi_finished' | 'by_product' = 'finished_good';
+    if (selectedProduct.product_type) {
+      finalProductType = normalizeProductType(selectedProduct.product_type);
+    } else if (isByProduct({ product_sku: selectedProduct.sku, product_name: selectedProduct.name })) {
+      finalProductType = 'by_product';
+    } else if (isSemiFinishedProduct({ product_sku: selectedProduct.sku, product_name: selectedProduct.name })) {
+      finalProductType = 'semi_finished';
+    }
+
     onAdd({
       product_id: selectedProduct.id,
       product_name: selectedProduct.name,
       product_sku: selectedProduct.sku,
-      product_type: selectedProduct.product_type || 'finished_good',
+      product_type: finalProductType,
       unit_of_measure: selectedProduct.unit_of_measure || 'tấn',
       is_out_of_plan: true,
       quantity_tons: Number(existingQty) || 0,
@@ -94,8 +109,14 @@ export const AddShiftProductDialog: React.FC<AddShiftProductDialogProps> = ({
             >
               <option value="">-- Chọn sản phẩm --</option>
               {availableProducts.map((p) => {
-                const isFG = p.product_type === 'finished_good' || (!p.product_type?.includes('by_product') && !p.name?.toLowerCase().includes('phụ phẩm'));
-                const typeLabel = isFG ? 'Thành phẩm' : 'Phụ phẩm';
+                const isSemi =
+                  p.product_type === 'semi_finished' ||
+                  p.name?.toLowerCase().includes('bán thành phẩm') ||
+                  p.sku?.toLowerCase().includes('btp');
+                const isBy =
+                  p.product_type === 'by_product' ||
+                  p.name?.toLowerCase().includes('phụ phẩm');
+                const typeLabel = isSemi ? 'Bán thành phẩm' : isBy ? 'Phụ phẩm' : 'Thành phẩm';
                 return (
                   <option key={p.id} value={p.id}>
                     [{p.sku}] {p.name} ({p.unit_of_measure}) — {typeLabel}
@@ -110,26 +131,41 @@ export const AddShiftProductDialog: React.FC<AddShiftProductDialogProps> = ({
             )}
           </div>
 
-          {selectedProduct && (
-            <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 text-xs space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Loại sản phẩm:</span>
-                <span className={`font-semibold px-2 py-0.5 rounded text-[11px] ${
-                  selectedProduct.product_type === 'finished_good' || (!selectedProduct.product_type?.includes('by_product') && !selectedProduct.name?.toLowerCase().includes('phụ phẩm'))
-                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                    : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
-                }`}>
-                  {selectedProduct.product_type === 'finished_good' || (!selectedProduct.product_type?.includes('by_product') && !selectedProduct.name?.toLowerCase().includes('phụ phẩm'))
-                    ? 'Thành phẩm (Tính vào sản lượng chính)'
-                    : 'Phụ phẩm (Không tính vào sản lượng chính)'}
-                </span>
+          {selectedProduct && (() => {
+            const finalType: 'finished_good' | 'semi_finished' | 'by_product' = selectedProduct.product_type
+              ? normalizeProductType(selectedProduct.product_type)
+              : isByProduct({ product_sku: selectedProduct.sku, product_name: selectedProduct.name })
+              ? 'by_product'
+              : isSemiFinishedProduct({ product_sku: selectedProduct.sku, product_name: selectedProduct.name })
+              ? 'semi_finished'
+              : 'finished_good';
+            const isSemi = finalType === 'semi_finished';
+            const isBy = finalType === 'by_product';
+            return (
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 text-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Loại sản phẩm:</span>
+                  <span className={`font-semibold px-2 py-0.5 rounded text-[11px] ${
+                    isSemi
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                      : !isBy
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                      : 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300'
+                  }`}>
+                    {isSemi
+                      ? 'Bán thành phẩm (Tính thu hồi riêng)'
+                      : !isBy
+                      ? 'Thành phẩm (Tính thu hồi thành phẩm)'
+                      : 'Phụ phẩm (Không tính vào thành phẩm)'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Đơn vị tính:</span>
+                  <span className="font-semibold text-foreground">{selectedProduct.unit_of_measure || 'Tấn'}</span>
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Đơn vị tính:</span>
-                <span className="font-semibold text-foreground">{selectedProduct.unit_of_measure || 'Tấn'}</span>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>

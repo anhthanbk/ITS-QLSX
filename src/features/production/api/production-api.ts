@@ -32,7 +32,7 @@ import type {
   ParetoItem,
   IncidentAIInsight,
 } from '../types';
-import { isFinishedProduct } from '../types';
+import { isFinishedProduct, isSemiFinishedProduct, isByProduct } from '../types';
 import {
   getCalendarHours,
   calculateOperatingHours,
@@ -567,14 +567,25 @@ export async function fetchAnnualProductionPlan(
       if (!materialRowsMap.has(key)) {
         const monthsInit: Record<number, number> = {};
         for (let m = 1; m <= 12; m++) monthsInit[m] = 0;
-        let categoryGroup: 'material' | 'fuel' | 'supply' = 'material';
-        if (item.resource_type === 'fuel' || item.resource_type === 'fuel_energy') {
+        let categoryGroup: 'material' | 'fuel' | 'energy' | 'supply' = 'material';
+        const resLower = (item.resource_type || '').toLowerCase();
+        const nameLower = (item.resource_name || '').toLowerCase();
+        const uomLower = (item.unit_of_measure || '').toLowerCase();
+
+        if (
+          resLower === 'electricity' ||
+          resLower === 'energy' ||
+          nameLower.includes('điện') ||
+          uomLower === 'kwh'
+        ) {
+          categoryGroup = 'energy';
+        } else if (resLower === 'fuel' || resLower === 'fuel_energy') {
           categoryGroup = 'fuel';
         } else if (
-          item.resource_type === 'supply' ||
-          item.resource_type === 'spare_part' ||
-          item.resource_type === 'chemical' ||
-          item.resource_type === 'consumable'
+          resLower === 'supply' ||
+          resLower === 'spare_part' ||
+          resLower === 'chemical' ||
+          resLower === 'consumable'
         ) {
           categoryGroup = 'supply';
         }
@@ -600,13 +611,13 @@ export async function fetchAnnualProductionPlan(
   if (!hasElectricity) {
     const elecMonthsInit: Record<number, number> = {};
     for (let m = 1; m <= 12; m++) elecMonthsInit[m] = 0;
-    const defaultElecKey = 'fuel:Điện năng tiêu thụ (Điện sản xuất)';
+    const defaultElecKey = 'energy:Điện năng tiêu thụ (Điện sản xuất)';
     materialRowsMap.set(defaultElecKey, {
       materialId: 'default-electricity',
       materialName: 'Điện năng tiêu thụ (Điện sản xuất)',
       materialCode: 'ELEC-POWER',
-      category: 'fuel_energy',
-      categoryGroup: 'fuel',
+      category: 'energy',
+      categoryGroup: 'energy',
       unitOfMeasure: 'kWh',
       months: elecMonthsInit,
     });
@@ -1316,8 +1327,11 @@ export async function createProductionShift(
   const finishedFromProds = prods.reduce((acc, p) => {
     return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
   }, 0);
+  const semiFinishedFromProds = prods.reduce((acc, p) => {
+    return isSemiFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+  }, 0);
   const byproductFromProds = prods.reduce((acc, p) => {
-    return !isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+    return isByProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
   }, 0);
 
   const productOutputTons =
@@ -1354,11 +1368,13 @@ export async function createProductionShift(
     runningHours > 0 && rawInput > 0
       ? Number((rawInput / runningHours).toFixed(2))
       : (runningHours > 0 && productOutputTons > 0 ? Number((productOutputTons / runningHours).toFixed(2)) : 0);
-  // Thu hồi = Thành phẩm / Nguyên liệu * 100%
+  // Thu hồi = Thành phẩm / Nguyên liệu * 100% (nếu ca sản xuất bán thành phẩm thì tính theo bán thành phẩm)
   const recovery =
     rawInput > 0 && productOutputTons > 0
       ? Number(((productOutputTons / rawInput) * 100).toFixed(2))
-      : (Number(values.actual_recovery_rate_pct) > 0 ? Number(values.actual_recovery_rate_pct) : 0);
+      : (rawInput > 0 && semiFinishedFromProds > 0
+          ? Number(((semiFinishedFromProds / rawInput) * 100).toFixed(2))
+          : (Number(values.actual_recovery_rate_pct) > 0 ? Number(values.actual_recovery_rate_pct) : 0));
 
   const breakdown = { ...(values.downtime_breakdown || {}) };
   if (values.operator_name) {
@@ -1519,13 +1535,17 @@ export async function updateProductionShift(
 ): Promise<ProductionShift> {
   const prods = values.products_output;
   let finishedSum: number | undefined = undefined;
+  let semiFinishedSum: number | undefined = undefined;
   let byproductSum: number | undefined = undefined;
   if (prods && Array.isArray(prods)) {
     finishedSum = prods.reduce((acc, p) => {
       return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
     }, 0);
+    semiFinishedSum = prods.reduce((acc, p) => {
+      return isSemiFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+    }, 0);
     byproductSum = prods.reduce((acc, p) => {
-      return !isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+      return isByProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
     }, 0);
   }
 
@@ -1559,9 +1579,11 @@ export async function updateProductionShift(
       : byproductSum;
 
   let calculatedRecovery: number | undefined = undefined;
-  if (rawInput !== undefined && productOutputTons !== undefined) {
-    if (rawInput > 0 && productOutputTons > 0) {
+  if (rawInput !== undefined) {
+    if (rawInput > 0 && productOutputTons !== undefined && productOutputTons > 0) {
       calculatedRecovery = Number(((productOutputTons / rawInput) * 100).toFixed(2));
+    } else if (rawInput > 0 && semiFinishedSum !== undefined && semiFinishedSum > 0) {
+      calculatedRecovery = Number(((semiFinishedSum / rawInput) * 100).toFixed(2));
     }
   }
 
@@ -2389,13 +2411,14 @@ export async function fetchShiftPlanContext(
     productId: string;
     productName: string;
     productSku: string;
+    productType?: string;
     unitOfMeasure: string;
     monthlyPlannedQty: number;
   }>;
   materials: Array<{
     materialId: string;
     resourceName: string;
-    categoryGroup: 'material' | 'fuel' | 'supply';
+    categoryGroup: 'material' | 'fuel' | 'energy' | 'supply';
     unitOfMeasure: string;
     monthlyPlannedQty: number;
   }>;
@@ -2418,6 +2441,7 @@ export async function fetchShiftPlanContext(
       productId: p.productId,
       productName: p.productName,
       productSku: p.productSku,
+      productType: p.productType,
       unitOfMeasure: p.unitOfMeasure,
       monthlyPlannedQty: p.months[month] || 0,
     }));
@@ -2456,7 +2480,7 @@ export async function batchSyncShiftsToWarehouse(payload: BatchShiftWarehouseSyn
   transactionsCreated: number;
   shiftsUpdated: number;
 }> {
-  const { selected_shift_ids, products, byproducts, materials, notes } = payload;
+  const { selected_shift_ids, products, semi_finished_products = [], byproducts, materials, notes } = payload;
   if (!selected_shift_ids || selected_shift_ids.length === 0) {
     throw new Error('Vui lòng chọn ít nhất một ca sản xuất để nghiệm thu và sinh phiếu kho.');
   }
@@ -2532,6 +2556,31 @@ export async function batchSyncShiftsToWarehouse(payload: BatchShiftWarehouseSyn
     });
   }
 
+  // 1b. Inbound Semi-Finished Products (production_receipt)
+  for (const item of semi_finished_products) {
+    if (!item.warehouse_id || item.total_quantity <= 0) continue;
+    const resolvedId = resolveItemId(item);
+    if (!resolvedId) continue;
+
+    const txNum = `NK-BTP-${dateStr}-${pad(txCounter++)}-${randomSuffix()}`;
+    const shiftCodesStr = item.shift_codes?.length ? ` [${item.shift_codes.join(', ')}]` : '';
+    const locStr = item.storage_location ? ` - Vị trí: ${item.storage_location}` : '';
+
+    txInserts.push({
+      transaction_number: txNum,
+      warehouse_id: item.warehouse_id,
+      item_type: 'product',
+      item_id: resolvedId,
+      transaction_type: 'production_receipt',
+      quantity: Math.abs(item.total_quantity),
+      unit_cost: 0,
+      reference_doc_type: 'production_shift',
+      reference_doc_id: item.shift_ids?.[0] || selected_shift_ids[0],
+      notes: `[Nghiệm thu SX] Nhập bán thành phẩm: ${item.item_name} (${item.item_code})${locStr}${shiftCodesStr}${notes ? ` - ${notes}` : ''}`,
+      created_by: userId,
+    });
+  }
+
   // 2. Inbound Byproducts (production_receipt)
   for (const item of byproducts) {
     if (!item.warehouse_id || item.total_quantity <= 0) continue;
@@ -2567,10 +2616,13 @@ export async function batchSyncShiftsToWarehouse(payload: BatchShiftWarehouseSyn
     const txNum = `XK-SX-${dateStr}-${pad(txCounter++)}-${randomSuffix()}`;
     const shiftCodesStr = item.shift_codes?.length ? ` [${item.shift_codes.join(', ')}]` : '';
 
+    const isProductItem = (prodsRes.data || []).some((p) => p.id === resolvedId);
+    const resolvedItemType: 'product' | 'material' = isProductItem ? 'product' : 'material';
+
     txInserts.push({
       transaction_number: txNum,
       warehouse_id: item.warehouse_id,
-      item_type: 'material',
+      item_type: resolvedItemType,
       item_id: resolvedId,
       transaction_type: 'production_issue',
       quantity: -Math.abs(item.total_quantity),
