@@ -85,6 +85,7 @@ export const AppRoutes: React.FC = () => {
           />
           <Route path="/production/annual-plan" element={<ProductionPage />} />
           <Route path="/production/shifts" element={<ProductionPage />} />
+          <Route path="/production/incidents" element={<ProductionPage />} />
           <Route
             path="/production/norms"
             element={<Navigate to="/production/annual-plan" replace />}

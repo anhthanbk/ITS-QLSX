@@ -104,7 +104,7 @@ export type TechnoEconomicNormFormValues = z.infer<typeof technoEconomicNormSche
 export const shiftMaterialConsumptionSchema = z.object({
   material_id: z.string().optional(),
   resource_name: z.string().min(1, 'Tên nguyên nhiên liệu không được để trống'),
-  category: z.enum(['material', 'fuel', 'supply']).default('material'),
+  category: z.enum(['material', 'fuel', 'supply', 'semi_finished', 'energy']).default('material'),
   unit_of_measure: z.string().default('tấn'),
   planned_norm: z.number().optional().default(0),
   actual_quantity: z
@@ -112,6 +112,8 @@ export const shiftMaterialConsumptionSchema = z.object({
     .min(0, 'Không được âm')
     .default(0),
   notes: z.string().optional().nullable(),
+  warehouse_id: z.string().optional().nullable(),
+  warehouse_name: z.string().optional().nullable(),
 });
 
 export type ShiftMaterialConsumptionFormValues = z.infer<typeof shiftMaterialConsumptionSchema>;
@@ -127,6 +129,9 @@ export const shiftProductOutputSchema = z.object({
     .number({ invalid_type_error: 'Sản lượng phải là số' })
     .min(0, 'Không được âm')
     .default(0),
+  warehouse_id: z.string().optional().nullable(),
+  warehouse_name: z.string().optional().nullable(),
+  storage_location: z.string().optional().nullable(),
 });
 
 export type ShiftProductOutputFormValues = z.infer<typeof shiftProductOutputSchema>;
@@ -138,7 +143,12 @@ export const shiftDowntimeEventSchema = z.object({
   end_time: z.string().optional().default('08:30'),
   duration_minutes: z.number().min(0).default(30),
   duration_hours: z.number().min(0).default(0.5),
+  machine_id: z.string().optional().nullable(),
+  equipment_code: z.string().optional().nullable(),
+  equipment_name: z.string().optional().nullable(),
   incident_category: z.string().optional().nullable(),
+  shutdown_type: z.string().optional().nullable(),
+  maintenance_type: z.string().optional().nullable(),
   reason: z.string().optional().nullable(),
   action_taken: z.string().optional().nullable(),
 });

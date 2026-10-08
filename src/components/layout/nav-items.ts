@@ -89,6 +89,12 @@ export const navigationItems: NavItem[] = [
         path: '/production/shifts',
         requiredPermission: ['production.shift.view', 'production.shift.read'],
       },
+      {
+        id: 'production-incidents',
+        title: 'Thống kê sự cố & Pareto',
+        path: '/production/incidents',
+        requiredPermission: ['production.shift.view', 'production.shift.read'],
+      },
     ],
   },
 

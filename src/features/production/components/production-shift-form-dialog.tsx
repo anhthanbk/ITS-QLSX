@@ -18,15 +18,34 @@ import {
   Layers,
   Activity,
   Settings2,
+  Zap,
+  RotateCcw,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/supabase/client';
 import { AuthContext } from '@/features/auth/context/auth-context';
 import {
   productionShiftSchema,
   type ProductionShiftFormValues,
 } from '../validation/production-schemas';
-import { isFinishedProduct, type ProductionShift, type ProductionLine, type ShiftProductOutput, type ShiftDowntimeEvent } from '../types';
+import { isFinishedProduct, isSemiFinishedProduct, isByProduct, type ProductionShift, type ProductionLine, type ShiftProductOutput, type ShiftDowntimeEvent } from '../types';
 import { useShiftPlanContext } from '../hooks/use-production-shifts';
+import { useWarehouses } from '@/features/warehouse/hooks/use-warehouses';
+import { useMachineOptions } from '@/features/maintenance/hooks/use-machines';
 import { AddShiftProductDialog } from './add-shift-product-dialog';
+
+const isElectricityResource = (name?: string | null, unit?: string | null): boolean => {
+  const n = (name || '').toLowerCase();
+  const u = (unit || '').toLowerCase();
+  return (
+    n.includes('điện') ||
+    n.includes('electricity') ||
+    n.includes('kwh') ||
+    u === 'kwh' ||
+    u === 'kwh/tấn' ||
+    u === 'kwh/t'
+  );
+};
 
 const calculateDowntimeDuration = (startTime: string, endTime: string) => {
   if (!startTime || !endTime) return { minutes: 0, hours: 0 };
@@ -82,6 +101,128 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
 
   const [activeTab, setActiveTab] = useState<'products' | 'materials' | 'downtime'>('products');
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
+
+  // Machine options for downtime equipment assignment
+  const { data: machineOptions = [] } = useMachineOptions();
+
+  // Custom incident categories state
+  const DEFAULT_INCIDENT_CATEGORIES = useMemo(
+    () => [
+      'Sự cố Điện - Tự động hóa',
+      'Sự cố Cơ khí',
+      'Sự cố Chất lượng',
+      'Sự cố Cấp liệu & Kẹt liệu',
+      'Sự cố Công nghệ & Tuyển khoáng',
+      'Sự cố An toàn & Môi trường',
+      'Sự cố khác',
+    ],
+    [],
+  );
+
+  const [customCategories, setCustomCategories] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('custom_incident_categories');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [deletedCategories, setDeletedCategories] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('deleted_incident_categories');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [addingCategoryIdx, setAddingCategoryIdx] = useState<number | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+
+  const allIncidentCategories = useMemo(() => {
+    const list = [...DEFAULT_INCIDENT_CATEGORIES, ...customCategories].filter(
+      (cat) => !deletedCategories.includes(cat),
+    );
+    initialData?.downtime_breakdown?.events?.forEach((evt) => {
+      if (evt.incident_category && !list.includes(evt.incident_category)) {
+        list.push(evt.incident_category);
+      }
+    });
+    return Array.from(new Set(list));
+  }, [DEFAULT_INCIDENT_CATEGORIES, customCategories, deletedCategories, initialData]);
+
+  const handleSaveCustomCategory = (idx?: number | null) => {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+
+    if (deletedCategories.includes(trimmed)) {
+      const nextDeleted = deletedCategories.filter((c) => c !== trimmed);
+      setDeletedCategories(nextDeleted);
+      try {
+        localStorage.setItem('deleted_incident_categories', JSON.stringify(nextDeleted));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    if (!customCategories.includes(trimmed) && !DEFAULT_INCIDENT_CATEGORIES.includes(trimmed)) {
+      const updated = [...customCategories, trimmed];
+      setCustomCategories(updated);
+      try {
+        localStorage.setItem('custom_incident_categories', JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    if (idx !== undefined && idx !== null) {
+      setValue(`downtime_breakdown.events.${idx}.incident_category`, trimmed);
+    }
+    setAddingCategoryIdx(null);
+    setNewCategoryName('');
+  };
+
+  const handleDeleteCategory = (catToDelete: string) => {
+    if (!catToDelete) return;
+
+    const nextCustom = customCategories.filter((c) => c !== catToDelete);
+    setCustomCategories(nextCustom);
+    try {
+      localStorage.setItem('custom_incident_categories', JSON.stringify(nextCustom));
+    } catch (e) {
+      console.error(e);
+    }
+
+    if (!deletedCategories.includes(catToDelete)) {
+      const nextDeleted = [...deletedCategories, catToDelete];
+      setDeletedCategories(nextDeleted);
+      try {
+        localStorage.setItem('deleted_incident_categories', JSON.stringify(nextDeleted));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    const remaining = allIncidentCategories.filter((c) => c !== catToDelete);
+    const fallback = remaining[0] || 'Sự cố khác';
+    const currentEvents = watch('downtime_breakdown.events') || [];
+    currentEvents.forEach((evt, i) => {
+      if (evt.incident_category === catToDelete) {
+        setValue(`downtime_breakdown.events.${i}.incident_category`, fallback);
+      }
+    });
+  };
+
+  const handleRestoreDefaultCategories = () => {
+    setDeletedCategories([]);
+    try {
+      localStorage.removeItem('deleted_incident_categories');
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // Close downtime dropdown on click outside
   useEffect(() => {
@@ -246,10 +387,19 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
     );
   }, [watchProducts]);
 
+  // Auto sum semi-finished products (tính riêng, không tính vào nguyên liệu hoặc thành phẩm)
+  const totalSemiFinishedOutput = useMemo(() => {
+    return Number(
+      watchProducts
+        .reduce((sum, p) => (isSemiFinishedProduct(p) ? sum + (Number(p.quantity_tons) || 0) : sum), 0)
+        .toFixed(2),
+    );
+  }, [watchProducts]);
+
   const totalByproductOutput = useMemo(() => {
     return Number(
       watchProducts
-        .reduce((sum, p) => (!isFinishedProduct(p) ? sum + (Number(p.quantity_tons) || 0) : sum), 0)
+        .reduce((sum, p) => (isByProduct(p) ? sum + (Number(p.quantity_tons) || 0) : sum), 0)
         .toFixed(2),
     );
   }, [watchProducts]);
@@ -275,15 +425,23 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
     );
   }, [watchedRawInput, rawWatchedMaterials]);
 
+  // Thu hồi thành phẩm
   const recoveryRate = useMemo(() => {
     if (totalRawInput <= 0) return 0;
     return Number(((totalFinishedOutput / totalRawInput) * 100).toFixed(2));
   }, [totalFinishedOutput, totalRawInput]);
 
+  // Thu hồi bán thành phẩm (tính riêng biệt)
+  const semiRecoveryRate = useMemo(() => {
+    if (totalRawInput <= 0) return 0;
+    return Number(((totalSemiFinishedOutput / totalRawInput) * 100).toFixed(2));
+  }, [totalSemiFinishedOutput, totalRawInput]);
+
   const productivityTPH = useMemo(() => {
     if (runningHours <= 0) return 0;
-    return Number((totalFinishedOutput / runningHours).toFixed(2));
-  }, [totalFinishedOutput, runningHours]);
+    const effectiveOutput = totalFinishedOutput > 0 ? totalFinishedOutput : totalSemiFinishedOutput;
+    return Number((effectiveOutput / runningHours).toFixed(2));
+  }, [totalFinishedOutput, totalSemiFinishedOutput, runningHours]);
 
   // Keep total_downtime_hours and product_output_tons in sync
   useEffect(() => {
@@ -317,6 +475,63 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
     selectedDate,
     isOpen,
   );
+
+  // Fetch warehouses list for selection
+  const { data: warehousesData } = useWarehouses({ page: 1, pageSize: 50 });
+  const warehousesList = warehousesData?.data || [];
+
+  // Fetch materials catalog and semi-finished products for selection
+  const { data: materialsCatalog = [] } = useQuery({
+    queryKey: ['materials-and-semi-catalog-options'],
+    queryFn: async () => {
+      const [matsRes, prodsRes] = await Promise.all([
+        supabase
+          .from('materials')
+          .select('id, code, name, category, unit_of_measure')
+          .order('name'),
+        supabase
+          .from('products')
+          .select('id, sku, name, product_type, unit_of_measure')
+          .order('name'),
+      ]);
+
+      const mats = (matsRes.data || []).map((m) => ({
+        id: m.id,
+        code: m.code,
+        name: m.name,
+        category: m.category,
+        unit_of_measure: m.unit_of_measure,
+        is_semi_finished: false,
+      }));
+
+      // Bán thành phẩm từ danh mục sản phẩm để dùng làm nguyên liệu tiêu hao cho chuyền sau
+      const semiProds = (prodsRes.data || [])
+        .filter((p) => {
+          const type = (p.product_type || '').toLowerCase();
+          const name = (p.name || '').toLowerCase();
+          return type === 'semi_finished' || name.includes('bán thành phẩm') || name.includes('btp');
+        })
+        .map((p) => ({
+          id: p.id,
+          code: p.sku || 'BTP',
+          name: p.name,
+          category: 'semi_finished',
+          unit_of_measure: p.unit_of_measure || 'Tấn',
+          is_semi_finished: true,
+        }));
+
+      return [...mats, ...semiProds];
+    },
+    staleTime: 60 * 1000,
+  });
+
+  const availableUnits = useMemo(() => {
+    const set = new Set<string>(['Tấn', 'kg', 'Lít', 'm3', 'kWh', 'bình', 'bao', 'cuộn', 'bộ', 'can', 'thùng']);
+    materialsCatalog.forEach((m) => {
+      if (m.unit_of_measure) set.add(m.unit_of_measure.trim());
+    });
+    return Array.from(set);
+  }, [materialsCatalog]);
 
   // Auto-generate shift code
   useEffect(() => {
@@ -462,7 +677,8 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
               product_id: p.productId,
               product_name: p.productName,
               product_sku: p.productSku,
-              unitOfMeasure: p.unitOfMeasure,
+              product_type: (p as unknown as { productType?: string }).productType || 'finished_good',
+              unit_of_measure: p.unitOfMeasure,
               is_out_of_plan: false,
               quantity_tons: 0,
             }))
@@ -543,6 +759,7 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
           product_id: p.productId,
           product_name: p.productName,
           product_sku: p.productSku,
+          product_type: (p as unknown as { productType?: string }).productType || 'finished_good',
           unit_of_measure: p.unitOfMeasure,
           is_out_of_plan: false,
           quantity_tons: 0,
@@ -576,12 +793,28 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
   };
 
   const handleAddCustomMaterial = () => {
+    const firstMat =
+      materialsCatalog.find((m) => !watch('materials_consumption')?.some((mc) => mc.resource_name === m.name)) ||
+      materialsCatalog[0];
+
     appendMaterial({
-      resource_name: 'Vật tư / Nhiên liệu mới',
-      category: 'supply',
-      unit_of_measure: 'Kg',
+      material_id: firstMat?.id,
+      resource_name: firstMat?.name || 'Vật tư / Nhiên liệu mới',
+      category:
+        firstMat?.category === 'semi_finished' || (firstMat as { is_semi_finished?: boolean })?.is_semi_finished
+          ? 'semi_finished'
+          : isElectricityResource(firstMat?.name, firstMat?.unit_of_measure)
+          ? 'energy'
+          : firstMat?.category === 'raw_material'
+          ? 'material'
+          : firstMat?.category === 'fuel_energy'
+          ? 'fuel'
+          : 'supply',
+      unit_of_measure: firstMat?.unit_of_measure || 'Kg',
       planned_norm: 0,
       actual_quantity: 0,
+      warehouse_id: null,
+      warehouse_name: null,
       notes: '',
     });
   };
@@ -624,7 +857,12 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
       end_time: defaultEnd,
       duration_minutes: minutes,
       duration_hours: hours,
+      machine_id: null,
+      equipment_code: null,
+      equipment_name: null,
       incident_category: type === 'breakdown_incident' ? 'Sự cố Cơ khí' : undefined,
+      shutdown_type: type === 'scheduled_shutdown' ? 'Nghỉ trong kế hoạch' : undefined,
+      maintenance_type: type === 'planned_maintenance' ? 'Bảo trì kế hoạch' : undefined,
       reason: '',
       action_taken: '',
     });
@@ -639,8 +877,11 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
     const finishedSum = prods.reduce((acc, p) => {
       return isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
     }, 0);
+    const semiFinishedSum = prods.reduce((acc, p) => {
+      return isSemiFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+    }, 0);
     const byproductSum = prods.reduce((acc, p) => {
-      return !isFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+      return isByProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
     }, 0);
 
     const mats = values.materials_consumption || [];
@@ -689,11 +930,17 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
       operator_name: finalOperatorName,
     };
 
+    const finalRecovery =
+      finalRawInput > 0
+        ? Number((((finalFinished > 0 ? finalFinished : semiFinishedSum) / finalRawInput) * 100).toFixed(2))
+        : 0;
+
     await onSubmit({
       ...values,
       operator_name: finalOperatorName,
       shift_date: isRange ? fromDate : values.shift_date,
       shift_number: isRange ? 1 : values.shift_number,
+      actual_recovery_rate_pct: finalRecovery,
       raw_material_input_tons: finalRawInput,
       product_output_tons: finalFinished,
       byproduct_output_tons: finalByproduct,
@@ -1026,11 +1273,19 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                   </div>
                   <div className="mt-1">
                     <span className="text-base font-extrabold text-indigo-600 dark:text-indigo-400">
-                      {recoveryRate.toFixed(1)}%
+                      {totalFinishedOutput > 0
+                        ? `${recoveryRate.toFixed(1)}%`
+                        : totalSemiFinishedOutput > 0
+                        ? `${semiRecoveryRate.toFixed(1)}% (BTP)`
+                        : '0.0%'}
                     </span>
                   </div>
                   <div className="mt-0.5 text-[10px] text-muted-foreground">
-                    Định mức: <span className="font-semibold text-foreground">83.75%</span>
+                    {totalSemiFinishedOutput > 0 && totalFinishedOutput > 0 ? (
+                      <>Thu hồi BTP riêng: <span className="font-semibold text-amber-600 dark:text-amber-400">{semiRecoveryRate.toFixed(1)}%</span></>
+                    ) : (
+                      <>Định mức: <span className="font-semibold text-foreground">83.75%</span></>
+                    )}
                   </div>
                 </div>
 
@@ -1129,7 +1384,9 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                               <th className="px-3 py-2">Tên thành phẩm</th>
                               <th className="px-3 py-2 text-center">Phân loại</th>
                               <th className="px-3 py-2 text-center">ĐVT</th>
-                              <th className="px-3 py-2 text-right w-44">Sản lượng ca (Tấn) *</th>
+                              <th className="px-3 py-2 text-right w-36">Sản lượng (Tấn) *</th>
+                              <th className="px-3 py-2 w-44">Kho nhập</th>
+                              <th className="px-3 py-2 w-32">Vị trí / Bãi</th>
                               <th className="px-3 py-2 text-center w-12"></th>
                             </tr>
                           </thead>
@@ -1137,7 +1394,6 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                             {productFields.map((field, idx) => {
                               const item = watchProducts[idx] || {};
                               const isOutOfPlan = watch(`products_output.${idx}.is_out_of_plan`);
-                              const isFinished = isFinishedProduct(item);
                               return (
                                 <tr key={field.id} className="hover:bg-muted/20">
                                   <td className="px-3 py-2.5 font-mono font-medium text-foreground">
@@ -1157,7 +1413,11 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                           Trong KH
                                         </span>
                                       )}
-                                      {isFinished ? (
+                                      {isSemiFinishedProduct(item) ? (
+                                        <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                          Bán thành phẩm
+                                        </span>
+                                      ) : isFinishedProduct(item) ? (
                                         <span className="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
                                           Thành phẩm
                                         </span>
@@ -1182,6 +1442,33 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                       className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-right text-xs font-bold text-emerald-600 dark:text-emerald-400 focus:ring-1 focus:ring-primary"
                                     />
                                   </td>
+                                  <td className="px-3 py-2.5">
+                                    <select
+                                      {...register(`products_output.${idx}.warehouse_id`)}
+                                      onChange={(e) => {
+                                        const whId = e.target.value;
+                                        setValue(`products_output.${idx}.warehouse_id`, whId || null);
+                                        const found = warehousesList.find((w) => w.id === whId);
+                                        setValue(`products_output.${idx}.warehouse_name`, found?.name || null);
+                                      }}
+                                      className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:ring-1 focus:ring-primary"
+                                    >
+                                      <option value="">-- Kho nhập --</option>
+                                      {warehousesList.map((w) => (
+                                        <option key={w.id} value={w.id}>
+                                          [{w.code}] {w.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    <input
+                                      type="text"
+                                      placeholder="Bãi/Silo..."
+                                      {...register(`products_output.${idx}.storage_location`)}
+                                      className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:ring-1 focus:ring-primary"
+                                    />
+                                  </td>
                                   <td className="px-3 py-2.5 text-center">
                                     {isOutOfPlan && (
                                       <button
@@ -1204,19 +1491,30 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                 Tổng sản lượng thành phẩm thu hồi:
                               </td>
                               <td className="px-3 py-2.5 text-right text-sm text-emerald-600 dark:text-emerald-400">
-                                {totalFinishedOutput.toLocaleString()} Tấn
+                                {totalFinishedOutput.toLocaleString()} Tấn {recoveryRate > 0 && <span className="text-xs font-normal text-muted-foreground">({recoveryRate}% thu hồi)</span>}
                               </td>
-                              <td></td>
+                              <td colSpan={3}></td>
                             </tr>
+                            {totalSemiFinishedOutput > 0 && (
+                              <tr className="border-t border-border/50 text-xs">
+                                <td colSpan={4} className="px-3 py-2 text-right font-medium text-amber-700 dark:text-amber-400">
+                                  Tổng sản lượng bán thành phẩm thu hồi (tính riêng):
+                                </td>
+                                <td className="px-3 py-2 text-right text-sm font-bold text-amber-600 dark:text-amber-400">
+                                  {totalSemiFinishedOutput.toLocaleString()} Tấn {semiRecoveryRate > 0 && <span className="text-xs font-normal text-muted-foreground">({semiRecoveryRate}% thu hồi BTP)</span>}
+                                </td>
+                                <td colSpan={3}></td>
+                              </tr>
+                            )}
                             {totalByproductOutput > 0 && (
                               <tr className="border-t border-border/50 text-xs">
                                 <td colSpan={4} className="px-3 py-1.5 text-right text-muted-foreground font-normal">
-                                  Tổng sản lượng phụ phẩm (không tính vào TP):
+                                  Tổng sản lượng phụ phẩm (không tính vào TP/BTP):
                                 </td>
                                 <td className="px-3 py-1.5 text-right font-semibold text-purple-600 dark:text-purple-400">
                                   {totalByproductOutput.toLocaleString()} Tấn
                                 </td>
-                                <td></td>
+                                <td colSpan={3}></td>
                               </tr>
                             )}
                           </tfoot>
@@ -1263,6 +1561,7 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                               <th className="px-3 py-2 text-center">Nhóm</th>
                               <th className="px-3 py-2 text-center">Đơn vị</th>
                               <th className="px-3 py-2 text-right w-44">Tiêu hao thực tế trong ca *</th>
+                              <th className="px-3 py-2 w-44">Kho xuất</th>
                               <th className="px-3 py-2">Ghi chú</th>
                               <th className="px-3 py-2 text-center w-12"></th>
                             </tr>
@@ -1275,22 +1574,66 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                   <td className="px-3 py-2.5">
                                     <input
                                       type="text"
+                                      list="materials-catalog-datalist"
                                       {...register(`materials_consumption.${idx}.resource_name`)}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setValue(`materials_consumption.${idx}.resource_name`, val);
+                                        const matched = materialsCatalog.find(
+                                          (m) =>
+                                            m.name.toLowerCase() === val.toLowerCase() ||
+                                            m.code.toLowerCase() === val.toLowerCase(),
+                                        );
+                                        if (matched) {
+                                          if (matched.unit_of_measure) {
+                                            setValue(`materials_consumption.${idx}.unit_of_measure`, matched.unit_of_measure);
+                                          }
+                                          const isElec = isElectricityResource(val, matched.unit_of_measure || watch(`materials_consumption.${idx}.unit_of_measure`));
+                                          setValue(
+                                            `materials_consumption.${idx}.category`,
+                                            matched.category === 'semi_finished' || (matched as { is_semi_finished?: boolean }).is_semi_finished
+                                              ? 'semi_finished'
+                                              : isElec
+                                              ? 'energy'
+                                              : matched.category === 'raw_material'
+                                              ? 'material'
+                                              : matched.category === 'fuel_energy'
+                                              ? 'fuel'
+                                              : 'supply',
+                                          );
+                                          if (matched.id) {
+                                            setValue(`materials_consumption.${idx}.material_id`, matched.id);
+                                          }
+                                        }
+                                        if (isElectricityResource(val, watch(`materials_consumption.${idx}.unit_of_measure`))) {
+                                          setValue(`materials_consumption.${idx}.warehouse_id`, null);
+                                          setValue(`materials_consumption.${idx}.warehouse_name`, null);
+                                        }
+                                      }}
+                                      placeholder="Chọn hoặc nhập tên vật tư / bán thành phẩm..."
                                       className="w-full rounded-md border border-input bg-transparent px-2 py-1 text-xs font-semibold text-foreground focus:bg-background"
                                     />
                                   </td>
                                   <td className="px-3 py-2.5 text-center">
                                     <span
                                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                        cat === 'fuel'
+                                        cat === 'energy' || isElectricityResource(watch(`materials_consumption.${idx}.resource_name`), watch(`materials_consumption.${idx}.unit_of_measure`))
+                                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/60 dark:text-yellow-300'
+                                          : cat === 'semi_finished'
                                           ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                          : cat === 'fuel'
+                                          ? 'bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300'
                                           : cat === 'supply'
                                           ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
                                           : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
                                       }`}
                                     >
-                                      {cat === 'fuel'
-                                        ? 'Nhiên liệu/Điện'
+                                      {cat === 'energy' || isElectricityResource(watch(`materials_consumption.${idx}.resource_name`), watch(`materials_consumption.${idx}.unit_of_measure`))
+                                        ? 'Năng lượng'
+                                        : cat === 'semi_finished'
+                                        ? 'Bán thành phẩm'
+                                        : cat === 'fuel'
+                                        ? 'Nhiên liệu'
                                         : cat === 'supply'
                                         ? 'Vật tư tiêu hao'
                                         : 'Nguyên liệu'}
@@ -1299,8 +1642,18 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                   <td className="px-3 py-2.5 text-center text-muted-foreground">
                                     <input
                                       type="text"
+                                      list="units-catalog-datalist"
                                       {...register(`materials_consumption.${idx}.unit_of_measure`)}
-                                      className="w-16 rounded border border-input bg-transparent px-1.5 py-1 text-center text-xs text-foreground focus:bg-background"
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setValue(`materials_consumption.${idx}.unit_of_measure`, val);
+                                        if (isElectricityResource(watch(`materials_consumption.${idx}.resource_name`), val)) {
+                                          setValue(`materials_consumption.${idx}.warehouse_id`, null);
+                                          setValue(`materials_consumption.${idx}.warehouse_name`, null);
+                                        }
+                                      }}
+                                      className="w-20 rounded border border-input bg-transparent px-1.5 py-1 text-center text-xs font-semibold text-foreground focus:bg-background"
+                                      placeholder="ĐVT"
                                     />
                                   </td>
                                   <td className="px-3 py-2.5 text-right">
@@ -1313,6 +1666,35 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                       })}
                                       className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-right text-xs font-bold text-primary focus:ring-1 focus:ring-primary"
                                     />
+                                  </td>
+                                  <td className="px-3 py-2.5">
+                                    {isElectricityResource(
+                                      watch(`materials_consumption.${idx}.resource_name`),
+                                      watch(`materials_consumption.${idx}.unit_of_measure`),
+                                    ) ? (
+                                      <div className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300 font-medium border border-dashed border-amber-500/30">
+                                        <Zap className="h-3 w-3 text-amber-500 shrink-0" />
+                                        <span>Không qua kho (Lưới điện)</span>
+                                      </div>
+                                    ) : (
+                                      <select
+                                        {...register(`materials_consumption.${idx}.warehouse_id`)}
+                                        onChange={(e) => {
+                                          const whId = e.target.value;
+                                          setValue(`materials_consumption.${idx}.warehouse_id`, whId || null);
+                                          const found = warehousesList.find((w) => w.id === whId);
+                                          setValue(`materials_consumption.${idx}.warehouse_name`, found?.name || null);
+                                        }}
+                                        className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground focus:ring-1 focus:ring-primary"
+                                      >
+                                        <option value="">-- Kho xuất --</option>
+                                        {warehousesList.map((w) => (
+                                          <option key={w.id} value={w.id}>
+                                            [{w.code}] {w.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
                                   </td>
                                   <td className="px-3 py-2.5">
                                     <input
@@ -1337,6 +1719,21 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                             })}
                           </tbody>
                         </table>
+
+                        {/* Datalists for materials catalog & units */}
+                        <datalist id="materials-catalog-datalist">
+                          {materialsCatalog.map((m) => (
+                            <option key={m.id} value={m.name}>
+                              [{m.code}] {m.unit_of_measure ? `(ĐVT: ${m.unit_of_measure})` : ''}
+                            </option>
+                          ))}
+                        </datalist>
+
+                        <datalist id="units-catalog-datalist">
+                          {availableUnits.map((u) => (
+                            <option key={u} value={u} />
+                          ))}
+                        </datalist>
                       </div>
                     )}
                   </div>
@@ -1603,7 +2000,7 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
 
                               {/* Event Fields Grid */}
                               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-12 items-start">
-                                {/* Time Range & Direct Hours */}
+                                {/* 1. Time Range & Direct Hours */}
                                 <div className="sm:col-span-5 flex items-center gap-2 bg-background p-2.5 rounded-lg border border-border">
                                   <div className="w-24">
                                     <label className="block text-[10px] font-bold text-foreground">
@@ -1642,28 +2039,193 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                                   </div>
                                 </div>
 
-                                {/* Incident Category (If breakdown) */}
+                                {/* 2. Equipment / Machine Selection */}
+                                <div className="sm:col-span-7 bg-background p-2.5 rounded-lg border border-border">
+                                  <div className="flex items-center justify-between">
+                                    <label className="block text-[10px] font-semibold text-foreground">
+                                      Mã thiết bị / Máy dừng
+                                    </label>
+                                    <span className="text-[9px] text-muted-foreground font-mono">Dùng cho biểu đồ Pareto</span>
+                                  </div>
+                                  <div className="mt-1 flex items-center gap-2">
+                                    <select
+                                      value={
+                                        watch(`downtime_breakdown.events.${idx}.machine_id`) ||
+                                        (watch(`downtime_breakdown.events.${idx}.equipment_code`) ? '__custom__' : '')
+                                      }
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val === '') {
+                                          setValue(`downtime_breakdown.events.${idx}.machine_id`, null);
+                                          setValue(`downtime_breakdown.events.${idx}.equipment_code`, null);
+                                          setValue(`downtime_breakdown.events.${idx}.equipment_name`, null);
+                                        } else if (val === '__custom__') {
+                                          setValue(`downtime_breakdown.events.${idx}.machine_id`, null);
+                                          if (!watch(`downtime_breakdown.events.${idx}.equipment_code`)) {
+                                            setValue(`downtime_breakdown.events.${idx}.equipment_code`, '');
+                                          }
+                                        } else {
+                                          const m = machineOptions.find((item) => item.id === val);
+                                          if (m) {
+                                            setValue(`downtime_breakdown.events.${idx}.machine_id`, m.id);
+                                            setValue(`downtime_breakdown.events.${idx}.equipment_code`, m.machine_code);
+                                            setValue(`downtime_breakdown.events.${idx}.equipment_name`, m.name);
+                                          }
+                                        }
+                                      }}
+                                      className="flex-1 rounded border border-input bg-transparent px-2 py-1 text-xs text-foreground focus:bg-background"
+                                    >
+                                      <option value="">-- Toàn dây chuyền / Chưa gán máy --</option>
+                                      {machineOptions.map((m) => (
+                                        <option key={m.id} value={m.id}>
+                                          {m.machine_code} - {m.name}
+                                        </option>
+                                      ))}
+                                      <option value="__custom__">Mã khác (nhập tay)...</option>
+                                    </select>
+
+                                    {/* If custom equipment code */}
+                                    {(!watch(`downtime_breakdown.events.${idx}.machine_id`) &&
+                                      watch(`downtime_breakdown.events.${idx}.equipment_code`) !== null &&
+                                      watch(`downtime_breakdown.events.${idx}.equipment_code`) !== undefined) && (
+                                      <input
+                                        type="text"
+                                        placeholder="Mã máy (vd: MN-01)"
+                                        {...register(`downtime_breakdown.events.${idx}.equipment_code`)}
+                                        className="w-32 rounded border border-primary/50 bg-primary/5 px-2 py-1 text-xs font-semibold text-foreground focus:bg-background"
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* 3. Sub-classification (Incident Category / Shutdown Type / Maintenance Type) */}
                                 {isIncident && (
-                                  <div className="sm:col-span-8 bg-background p-2.5 rounded-lg border border-rose-200 dark:border-rose-900/50">
-                                    <label className="block text-[10px] font-semibold text-rose-700 dark:text-rose-400">
-                                      Phân loại sự cố *
+                                  <div className="sm:col-span-12 bg-background p-2.5 rounded-lg border border-rose-200 dark:border-rose-900/50">
+                                    <div className="flex items-center justify-between">
+                                      <label className="block text-[10px] font-semibold text-rose-700 dark:text-rose-400">
+                                        Phân loại sự cố *
+                                      </label>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setAddingCategoryIdx(idx);
+                                            setNewCategoryName('');
+                                          }}
+                                          className="inline-flex items-center gap-1 text-[10px] text-rose-600 hover:text-rose-700 dark:text-rose-400 font-semibold hover:underline"
+                                        >
+                                          <Plus className="h-3 w-3" /> Thêm mới
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setIsCategoryManagerOpen(true)}
+                                          className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground font-medium hover:underline"
+                                          title="Quản lý và xóa phân loại"
+                                        >
+                                          <Settings2 className="h-3 w-3" /> Quản lý / Xóa
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {addingCategoryIdx === idx ? (
+                                      <div className="mt-1 flex items-center gap-2">
+                                        <input
+                                          type="text"
+                                          value={newCategoryName}
+                                          onChange={(e) => setNewCategoryName(e.target.value)}
+                                          placeholder="Nhập tên phân loại sự cố mới (vd: Sự cố Áp lực nước...)"
+                                          className="flex-1 rounded border border-primary px-2 py-1 text-xs text-foreground bg-background"
+                                          autoFocus
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              handleSaveCustomCategory(idx);
+                                            }
+                                          }}
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSaveCustomCategory(idx)}
+                                          className="rounded bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                                        >
+                                          Lưu
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setAddingCategoryIdx(null)}
+                                          className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                                        >
+                                          Hủy
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="mt-1 flex items-center gap-1.5">
+                                        <select
+                                          {...register(`downtime_breakdown.events.${idx}.incident_category`)}
+                                          className="flex-1 rounded border border-input bg-transparent px-2 py-1 text-xs text-foreground focus:bg-background"
+                                        >
+                                          {allIncidentCategories.map((cat) => (
+                                            <option key={cat} value={cat}>
+                                              {cat}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        {allIncidentCategories.length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const cur =
+                                                watch(`downtime_breakdown.events.${idx}.incident_category`) ||
+                                                allIncidentCategories[0];
+                                              if (cur && window.confirm(`Bạn có chắc muốn xóa phân loại "${cur}" khỏi danh mục lựa chọn?`)) {
+                                                handleDeleteCategory(cur);
+                                              }
+                                            }}
+                                            className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                                            title="Xóa phân loại này khỏi danh sách"
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {isShutdown && (
+                                  <div className="sm:col-span-12 bg-background p-2.5 rounded-lg border border-blue-200 dark:border-blue-900/50">
+                                    <label className="block text-[10px] font-semibold text-blue-700 dark:text-blue-400">
+                                      Phân loại nghỉ kế hoạch *
                                     </label>
                                     <select
-                                      {...register(`downtime_breakdown.events.${idx}.incident_category`)}
-                                      className="mt-0.5 w-full rounded border border-input bg-transparent px-2 py-1 text-xs text-foreground focus:bg-background"
+                                      {...register(`downtime_breakdown.events.${idx}.shutdown_type`)}
+                                      className="mt-1 w-full rounded border border-input bg-transparent px-2 py-1 text-xs text-foreground focus:bg-background"
                                     >
-                                      <option value="Sự cố Cơ khí">Sự cố Cơ khí (Máy nghiền, Băng tải, Bơm, Sàng)</option>
-                                      <option value="Sự cố Điện & Tự động hóa">Sự cố Điện & Tự động hóa (Mất điện, Nhảy át, Motor, PLC)</option>
-                                      <option value="Sự cố Cấp liệu & Kẹt liệu">Sự cố Cấp liệu & Kẹt liệu (Tắc phễu, Liệu ẩm bết)</option>
-                                      <option value="Sự cố Công nghệ & Tuyển khoáng">Sự cố Công nghệ (Sai tỷ trọng, Bọt tuyển)</option>
-                                      <option value="Sự cố An toàn & Môi trường">Sự cố An toàn & Môi trường</option>
-                                      <option value="Sự cố khác">Sự cố khác</option>
+                                      <option value="Nghỉ trong kế hoạch">Nghỉ trong kế hoạch (Lịch sản xuất, Điều độ điện, Thay ca)</option>
+                                      <option value="Đầy kho">Đầy kho (Kho chứa / Silo / Bãi quặng đầy, tạm dừng kéo dài)</option>
+                                      <option value="Khác">Khác</option>
                                     </select>
                                   </div>
                                 )}
 
-                                {/* Details and Actions */}
-                                <div className={isIncident ? "sm:col-span-12 grid grid-cols-1 sm:grid-cols-2 gap-2.5" : "sm:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-2.5"}>
+                                {isMaint && (
+                                  <div className="sm:col-span-12 bg-background p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/50">
+                                    <label className="block text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                                      Phân loại bảo trì *
+                                    </label>
+                                    <select
+                                      {...register(`downtime_breakdown.events.${idx}.maintenance_type`)}
+                                      className="mt-1 w-full rounded border border-input bg-transparent px-2 py-1 text-xs text-foreground focus:bg-background"
+                                    >
+                                      <option value="Bảo trì kế hoạch">Bảo trì kế hoạch (Bảo dưỡng định kỳ, tra mỡ, kiểm tra máy)</option>
+                                      <option value="Đầy kho bảo trì">Đầy kho bảo trì (Tranh thủ dừng bảo trì / sửa chữa khi đầy kho)</option>
+                                      <option value="Khác">Khác</option>
+                                    </select>
+                                  </div>
+                                )}
+
+                                {/* 4. Details and Actions */}
+                                <div className="sm:col-span-12 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                   <div className="bg-background p-2.5 rounded-lg border border-border">
                                     <label className="block text-[10px] font-semibold text-foreground">
                                       {isIncident
@@ -1751,12 +2313,16 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
                 <span className="inline-flex items-center gap-1 rounded bg-muted/70 px-2.5 py-1 text-[11px] font-medium border border-border/50">
                   Chạy máy: <strong className="text-primary">{runningHours}h</strong> / {stdHours}h
                 </span>
-                <span className="inline-flex items-center gap-1 rounded bg-muted/70 px-2.5 py-1 text-[11px] font-medium border border-border/50">
-                  TP chính: <strong className="text-emerald-600 dark:text-emerald-400">{totalFinishedOutput.toLocaleString('vi-VN')} Tấn</strong>
-                </span>
-                <span className="inline-flex items-center gap-1 rounded bg-muted/70 px-2.5 py-1 text-[11px] font-medium border border-border/50">
-                  Thu hồi: <strong className="text-foreground">{recoveryRate.toFixed(1)}%</strong>
-                </span>
+                {totalFinishedOutput > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded bg-muted/70 px-2.5 py-1 text-[11px] font-medium border border-border/50">
+                    TP chính: <strong className="text-emerald-600 dark:text-emerald-400">{totalFinishedOutput.toLocaleString('vi-VN')} Tấn</strong> ({recoveryRate.toFixed(1)}%)
+                  </span>
+                )}
+                {totalSemiFinishedOutput > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 text-[11px] font-medium border border-amber-200/50 dark:border-amber-900/50 text-amber-800 dark:text-amber-300">
+                    BTP riêng: <strong>{totalSemiFinishedOutput.toLocaleString('vi-VN')} Tấn</strong> ({semiRecoveryRate.toFixed(1)}%)
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1787,6 +2353,98 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
         onAdd={handleAddOutOfPlanProduct}
         existingProductIds={existingProductIds}
       />
+
+      {/* Category Manager Modal */}
+      {isCategoryManagerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-primary" />
+                <h4 className="text-sm font-bold text-foreground">Quản lý Phân loại Sự cố</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCategoryManagerOpen(false)}
+                className="rounded p-1 text-muted-foreground hover:bg-muted"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Thêm phân loại mới hoặc xóa bớt các phân loại cũ không còn áp dụng trong nhà máy.
+              </p>
+
+              {/* Add form */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="Nhập tên phân loại mới..."
+                  className="flex-1 rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:ring-1 focus:ring-primary"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveCustomCategory();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSaveCustomCategory()}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
+                >
+                  Thêm
+                </button>
+              </div>
+
+              {/* List */}
+              <div className="max-h-64 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+                {allIncidentCategories.map((cat) => (
+                  <div key={cat} className="flex items-center justify-between px-3 py-2 text-xs hover:bg-muted/30">
+                    <span className="font-medium text-foreground">{cat}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCategory(cat)}
+                      className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 transition-colors"
+                      title={`Xóa "${cat}"`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {allIncidentCategories.length === 0 && (
+                  <div className="p-4 text-center text-xs text-muted-foreground">
+                    Không còn phân loại nào. Hãy thêm mới hoặc khôi phục mặc định.
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  type="button"
+                  onClick={handleRestoreDefaultCategories}
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Khôi phục mặc định
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryManagerOpen(false)}
+                  className="rounded-lg bg-secondary px-3.5 py-1.5 text-xs font-semibold text-secondary-foreground hover:bg-secondary/80"
+                >
+                  Hoàn tất
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

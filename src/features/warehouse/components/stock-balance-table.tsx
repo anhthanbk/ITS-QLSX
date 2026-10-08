@@ -97,13 +97,20 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
         item.item_code.toLowerCase().includes(q) ||
         item.item_name.toLowerCase().includes(q);
 
+      const isSemi =
+        item.category === 'semi_finished' ||
+        item.category_label?.toLowerCase().includes('bán thành phẩm') ||
+        item.item_code.toLowerCase().includes('btp');
+
       const matchesType =
         selectedItemType === 'all' ||
-        item.item_type === selectedItemType ||
-        item.category === selectedItemType ||
+        (selectedItemType === 'semi_finished' && isSemi) ||
+        (selectedItemType === 'finished_good' && !isSemi && (item.category === 'finished_good' || item.item_type === 'product')) ||
+        (selectedItemType === 'product' && !isSemi && (item.item_type === 'product' || item.category === 'finished_good')) ||
         (selectedItemType === 'material' && (item.item_type === 'material' || ['raw_material', 'spare_part', 'chemical', 'packaging', 'consumable', 'fuel_energy', 'other'].includes(item.category || ''))) ||
-        (selectedItemType === 'product' && (item.item_type === 'product' || ['finished_good', 'semi_finished'].includes(item.category || ''))) ||
-        (selectedItemType === 'byproduct' && (item.item_type === 'byproduct' || item.category === 'by_product'));
+        (selectedItemType === 'byproduct' && (item.item_type === 'byproduct' || item.category === 'by_product' || item.category === 'byproduct')) ||
+        item.category === selectedItemType ||
+        item.item_type === selectedItemType;
 
       const matchesWarehouse =
         selectedWarehouseId === 'all' ||
@@ -311,7 +318,8 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
             </optgroup>
             <optgroup label="🗂️ Nhóm tổng quát">
               <option value="material">Tất cả vật tư & phụ tùng</option>
-              <option value="product">Tất cả thành phẩm</option>
+              <option value="product">Tất cả thành phẩm chính</option>
+              <option value="semi_finished">Tất cả bán thành phẩm</option>
               <option value="byproduct">Tất cả phụ phẩm</option>
             </optgroup>
           </select>
@@ -526,7 +534,7 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                       <td className="py-3 px-4 text-right font-medium text-rose-600 dark:text-rose-400">
                                         {(item.total_outbound ?? 0).toLocaleString('vi-VN')}
                                       </td>
-                                      <td className="py-3 px-4 text-right font-bold text-foreground bg-muted/20">
+                                      <td className={`py-3 px-4 text-right font-bold bg-muted/20 ${item.current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : item.current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
                                         {item.current_quantity.toLocaleString('vi-VN')}
                                       </td>
                                       <td className="py-3 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400">
@@ -707,7 +715,7 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                               <td className="py-3.5 px-4 text-right font-medium text-rose-600 dark:text-rose-400">
                                 {item.total_outbound.toLocaleString('vi-VN')}
                               </td>
-                              <td className="py-3.5 px-4 text-right font-bold text-foreground bg-muted/20">
+                              <td className={`py-3.5 px-4 text-right font-bold bg-muted/20 ${item.total_current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : item.total_current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
                                 {item.total_current_quantity.toLocaleString('vi-VN')}
                               </td>
                               <td className="py-3.5 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400">
@@ -764,7 +772,7 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                               <td className="py-2.5 px-3 text-right text-rose-600 dark:text-rose-400 font-medium">
                                                 {(wh.total_outbound ?? 0).toLocaleString('vi-VN')}
                                               </td>
-                                              <td className="py-2.5 px-3 text-right font-bold text-foreground">
+                                              <td className={`py-2.5 px-3 text-right font-bold ${wh.current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : wh.current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
                                                 {wh.current_quantity.toLocaleString('vi-VN')}
                                               </td>
                                               <td className="py-2.5 px-3 text-right font-bold text-emerald-600 dark:text-emerald-400">

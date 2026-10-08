@@ -1,7 +1,7 @@
 import React from 'react';
-import { Eye, Edit, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Eye, Edit, Trash2, ChevronLeft, ChevronRight, CheckCircle2, PackageCheck } from 'lucide-react';
 import type { ProductionShift } from '../types';
-import { isFinishedProduct } from '../types';
+import { isFinishedProduct, isSemiFinishedProduct } from '../types';
 import { cn } from '@/lib/utils';
 
 interface ProductionShiftTableProps {
@@ -18,6 +18,11 @@ interface ProductionShiftTableProps {
   canDelete?: boolean;
   plannedProductivityTph?: number;
   plannedRecoveryRatePct?: number;
+  selectedShiftIds?: string[];
+  onToggleSelectShift?: (shiftId: string) => void;
+  onToggleSelectAll?: (shiftIds: string[]) => void;
+  onOpenBatchWarehouseSync?: () => void;
+  canBatchSyncWarehouse?: boolean;
 }
 
 export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
@@ -34,8 +39,37 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
   canDelete = false,
   plannedProductivityTph,
   plannedRecoveryRatePct,
+  selectedShiftIds = [],
+  onToggleSelectShift,
+  onToggleSelectAll,
+  onOpenBatchWarehouseSync,
+  canBatchSyncWarehouse = false,
 }) => {
   const totalPages = Math.ceil(totalCount / pageSize) || 1;
+
+  const currentPageShiftIds = data.map((s) => s.id);
+  const isAllSelected =
+    currentPageShiftIds.length > 0 &&
+    currentPageShiftIds.every((id) => selectedShiftIds.includes(id));
+  const isSomeSelected =
+    currentPageShiftIds.some((id) => selectedShiftIds.includes(id));
+
+  const handleSelectAll = () => {
+    if (!onToggleSelectAll) return;
+    if (isAllSelected) {
+      // Unselect all current page shifts
+      const remaining = selectedShiftIds.filter(
+        (id) => !currentPageShiftIds.includes(id),
+      );
+      onToggleSelectAll(remaining);
+    } else {
+      // Select all current page shifts
+      const merged = Array.from(
+        new Set([...selectedShiftIds, ...currentPageShiftIds]),
+      );
+      onToggleSelectAll(merged);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -86,11 +120,59 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
   );
 
   return (
-    <div className="flex flex-col rounded-xl border border-border bg-card shadow-sm">
+    <div className="flex flex-col rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      {/* Batch selection action banner */}
+      {canBatchSyncWarehouse && selectedShiftIds.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-primary/20 bg-primary/5 px-4 py-2.5 text-xs animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex h-5 items-center justify-center rounded-full bg-primary px-2 text-[11px] font-bold text-primary-foreground">
+              {selectedShiftIds.length}
+            </span>
+            <span className="font-semibold text-foreground">
+              Đã chọn {selectedShiftIds.length} ca sản xuất
+            </span>
+            <span className="hidden sm:inline text-muted-foreground">
+              — Sẵn sàng nghiệm thu & sinh phiếu nhập/xuất kho
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onToggleSelectAll?.([])}
+              className="rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              Bỏ chọn
+            </button>
+            <button
+              type="button"
+              onClick={onOpenBatchWarehouseSync}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+            >
+              <PackageCheck className="h-3.5 w-3.5" />
+              Nghiệm thu & Sinh phiếu kho
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
             <tr>
+              {canBatchSyncWarehouse && (
+                <th className="px-3 py-3 w-8 text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isSomeSelected && !isAllSelected;
+                    }}
+                    onChange={handleSelectAll}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                    title="Chọn tất cả ca trong trang này"
+                  />
+                </th>
+              )}
               <th className="px-3 py-3">Ngày & Ca</th>
               <th className="px-3 py-3 text-center">Mã Line</th>
               <th className="px-3 py-3 text-center">Thời gian vận hành</th>
@@ -99,6 +181,7 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
               <th className="px-3 py-3 text-center">Thu hồi</th>
               <th className="px-3 py-3 text-center">Sản lượng</th>
               <th className="px-3 py-3 text-center">OEE</th>
+              <th className="px-3 py-3 text-center">Kho</th>
               <th className="px-3 py-3">Người cập nhật</th>
               <th className="px-3 py-3 text-center w-24">Thao tác</th>
             </tr>
@@ -145,16 +228,33 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                 return Number(shift.product_output_tons || 0);
               })();
 
+              // Bán thành phẩm: tính riêng
+              const semiFinishedOutput = (() => {
+                if (Array.isArray(shift.products_output) && shift.products_output.length > 0) {
+                  return shift.products_output.reduce((acc, p) => {
+                    return isSemiFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+                  }, 0);
+                }
+                return 0;
+              })();
+
               // Công suất = Nguyên liệu cấp / Giờ chạy (TPH)
               const actualCapacity =
                 runHours > 0 && rawInput > 0
                   ? Number((rawInput / runHours).toFixed(1))
                   : (shift.actual_capacity_tph && shift.actual_capacity_tph > 0 ? Number(shift.actual_capacity_tph) : 0);
 
-              // Năng suất = Sản lượng thành phẩm / Giờ chạy (TPH)
+              // Năng suất = Sản lượng (thành phẩm hoặc bán thành phẩm) / Giờ chạy (TPH)
+              const effectiveOutputForProductivity = finishedOutput > 0 ? finishedOutput : semiFinishedOutput;
               const actualProductivity =
-                runHours > 0 && finishedOutput > 0
-                  ? Number((finishedOutput / runHours).toFixed(1))
+                runHours > 0 && effectiveOutputForProductivity > 0
+                  ? Number((effectiveOutputForProductivity / runHours).toFixed(1))
+                  : 0;
+
+              // Thu hồi BTP riêng
+              const actualSemiRecovery =
+                rawInput > 0 && semiFinishedOutput > 0
+                  ? Number(((semiFinishedOutput / rawInput) * 100).toFixed(2))
                   : 0;
 
               // Thu hồi = Thành phẩm / Nguyên liệu * 100%
@@ -240,9 +340,29 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
               const isRecMet = actualRecovery >= effectivePlannedRecovery;
               const isOutputMet = finishedOutput >= TARGET_OUTPUT_TONS;
               const isOeeMet = oee >= TARGET_OEE_PCT;
+              const isSelected = selectedShiftIds.includes(shift.id);
 
               return (
-                <tr key={shift.id} className="transition-colors hover:bg-muted/30">
+                <tr
+                  key={shift.id}
+                  className={cn(
+                    'transition-colors hover:bg-muted/30',
+                    isSelected && 'bg-primary/5 hover:bg-primary/10',
+                  )}
+                >
+                  {/* 0. Batch select checkbox */}
+                  {canBatchSyncWarehouse && (
+                    <td className="px-3 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelectShift?.(shift.id)}
+                        className="h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                        title={`Chọn ca ${shift.shift_code || shift.shift_date}`}
+                      />
+                    </td>
+                  )}
+
                   {/* 1. Ngày & Ca */}
                   <td className="px-3 py-3">
                     {(() => {
@@ -312,21 +432,50 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                     )}
                   </td>
 
-                  {/* 6. Thu hồi (= sản lượng thành phẩm / nguyên liệu) */}
+                  {/* 6. Thu hồi (= sản lượng thành phẩm / nguyên liệu, tính riêng BTP nếu là ca bán thành phẩm) */}
                   <td className="px-3 py-3 text-center">
-                    {renderMetricCell(
-                      `${actualRecovery}%`,
-                      '',
-                      isRecMet,
+                    {finishedOutput > 0 ? (
+                      renderMetricCell(
+                        `${actualRecovery}%`,
+                        '',
+                        isRecMet,
+                      )
+                    ) : semiFinishedOutput > 0 ? (
+                      renderMetricCell(
+                        `${actualSemiRecovery}%`,
+                        'BTP',
+                        actualSemiRecovery >= effectivePlannedRecovery,
+                      )
+                    ) : (
+                      renderMetricCell(
+                        `${actualRecovery}%`,
+                        '',
+                        isRecMet,
+                      )
                     )}
                   </td>
 
-                  {/* 7. Sản lượng: chỉ tính thành phẩm */}
+                  {/* 7. Sản lượng: hiển thị thành phẩm và bán thành phẩm nếu có */}
                   <td className="px-3 py-3 text-center">
-                    {renderMetricCell(
-                      finishedOutput.toLocaleString('vi-VN'),
-                      'T',
-                      isOutputMet,
+                    {finishedOutput > 0 ? (
+                      renderMetricCell(
+                        finishedOutput.toLocaleString('vi-VN'),
+                        'T',
+                        isOutputMet,
+                      )
+                    ) : semiFinishedOutput > 0 ? (
+                      <div className="flex flex-col items-center">
+                        <span className="font-bold text-amber-600 dark:text-amber-400">
+                          {semiFinishedOutput.toLocaleString('vi-VN')}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">T (BTP)</span>
+                      </div>
+                    ) : (
+                      renderMetricCell(
+                        '0',
+                        'T',
+                        false,
+                      )
                     )}
                   </td>
 
@@ -339,7 +488,27 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                     )}
                   </td>
 
-                  {/* 9. Trưởng ca (người cập nhật) */}
+                  {/* 9. Trạng thái kho */}
+                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                    {shift.warehouse_synced ? (
+                      <span
+                        className="inline-flex items-center gap-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 text-[10px] font-semibold"
+                        title={
+                          shift.warehouse_synced_at
+                            ? `Đã nghiệm thu nhập kho: ${new Date(shift.warehouse_synced_at).toLocaleString('vi-VN')}`
+                            : 'Đã nghiệm thu nhập kho'
+                        }
+                      >
+                        <CheckCircle2 className="h-3 w-3" /> Đã nhập
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 text-[10px] font-semibold">
+                        Chưa nhập
+                      </span>
+                    )}
+                  </td>
+
+                  {/* 10. Trưởng ca (người cập nhật) */}
                   <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
                     {shift.operator_name || '---'}
                   </td>

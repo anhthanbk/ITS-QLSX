@@ -53,6 +53,8 @@ export const ProductionConsumptionNormsBar: React.FC<ProductionConsumptionNormsB
 
   const getCategoryLabel = (category: string) => {
     switch (category) {
+      case 'energy':
+        return 'Năng lượng';
       case 'fuel':
         return 'Nhiên liệu';
       case 'material':

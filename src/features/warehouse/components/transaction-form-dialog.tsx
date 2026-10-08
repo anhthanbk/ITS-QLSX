@@ -18,9 +18,15 @@ interface TransactionFormDialogProps {
 function getFilteredItems(items: WarehouseItemOption[], category: string): WarehouseItemOption[] {
   if (category === 'all') return items;
   if (category === 'material') return items.filter((i) => i.item_type === 'material');
-  if (category === 'product') return items.filter((i) => i.item_type === 'product');
-  if (category === 'byproduct') return items.filter((i) => i.item_type === 'byproduct');
-  if (category === 'by_product') return items.filter((i) => i.category === 'by_product' || i.item_type === 'byproduct');
+  if (category === 'semi_finished') return items.filter((i) => i.category === 'semi_finished');
+  if (category === 'product' || category === 'finished_good') {
+    return items.filter(
+      (i) => i.category === 'finished_good' || (i.item_type === 'product' && i.category !== 'semi_finished' && i.category !== 'by_product'),
+    );
+  }
+  if (category === 'byproduct' || category === 'by_product') {
+    return items.filter((i) => i.category === 'by_product' || i.category === 'byproduct' || i.item_type === 'byproduct');
+  }
   return items.filter((i) => i.category === category);
 }
 
@@ -249,7 +255,8 @@ export const TransactionFormDialog: React.FC<TransactionFormDialogProps> = ({
                 </optgroup>
                 <optgroup label="🗂️ Phân loại tổng hợp (General Categories)">
                   <option value="material">Toàn bộ vật tư & phụ tùng (materials)</option>
-                  <option value="product">Toàn bộ thành phẩm (products)</option>
+                  <option value="product">Toàn bộ thành phẩm (finished goods)</option>
+                  <option value="semi_finished">Toàn bộ bán thành phẩm (semi-finished goods)</option>
                   <option value="byproduct">Toàn bộ phụ phẩm thu hồi (byproducts)</option>
                 </optgroup>
               </select>

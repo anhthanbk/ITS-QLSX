@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Calendar, Clock } from 'lucide-react';
+import { Calendar, Clock, BarChart3 } from 'lucide-react';
 import { PageContainer } from '@/components/layout/page-container';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { cn } from '@/lib/utils';
@@ -32,8 +32,10 @@ import { ProductionShiftTable } from '../components/production-shift-table';
 import { ProductionShiftFormDialog } from '../components/production-shift-form-dialog';
 import { ProductionShiftDetailModal } from '../components/production-shift-detail-modal';
 import { ProductionShiftDeleteDialog } from '../components/production-shift-delete-dialog';
+import { BatchShiftWarehouseDialog } from '../components/batch-shift-warehouse-dialog';
+import { IncidentAnalyticsTab } from '../components/incident-analytics-tab';
 
-type ProductionTab = 'annual-plan' | 'shifts';
+type ProductionTab = 'annual-plan' | 'shifts' | 'incidents';
 
 export const ProductionPage: React.FC = () => {
   const location = useLocation();
@@ -65,9 +67,17 @@ export const ProductionPage: React.FC = () => {
     hasRole('plant_manager') ||
     hasPermission('production.shift.delete');
 
+  const canBatchSyncWarehouse =
+    hasRole('admin') ||
+    hasRole('plant_manager') ||
+    hasRole('production_lead') ||
+    hasPermission('production.plan.approve') ||
+    hasPermission('inventory.receipt.create');
+
   // Determine active tab from URL path
   const getTabFromPath = (path: string): ProductionTab => {
     if (path.includes('/production/shifts')) return 'shifts';
+    if (path.includes('/production/incidents')) return 'incidents';
     return 'annual-plan';
   };
 
@@ -122,6 +132,14 @@ export const ProductionPage: React.FC = () => {
   const [viewingShift, setViewingShift] = useState<ProductionShift | null>(null);
   const [deletingShift, setDeletingShift] = useState<ProductionShift | null>(null);
 
+  // Batch warehouse sync state (Trưởng / phó phòng gom ca)
+  const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
+  const [isBatchWarehouseOpen, setIsBatchWarehouseOpen] = useState(false);
+
+  const selectedShifts = (shiftsData?.data || []).filter((shift) =>
+    selectedShiftIds.includes(shift.id),
+  );
+
   // Dynamic header based on tab
   const tabConfigs = {
     'annual-plan': {
@@ -131,6 +149,10 @@ export const ProductionPage: React.FC = () => {
     shifts: {
       title: 'Theo dõi ca & nhập liệu',
       description: 'Ghi nhận sản lượng thành phẩm, tiêu hao nguyên nhiên liệu, thời gian dừng chuyền và chất lượng sản phẩm',
+    },
+    incidents: {
+      title: 'Thống kê sự cố & Dừng máy',
+      description: 'Biểu đồ Pareto số lần và thời gian dừng chuyền, AI phân tích quy luật 80/20 và lịch sử sự cố chi tiết',
     },
   };
 
@@ -145,6 +167,11 @@ export const ProductionPage: React.FC = () => {
       label: 'Theo dõi ca & nhập liệu',
       icon: Clock,
       count: shiftsData?.totalCount,
+    },
+    {
+      id: 'incidents' as const,
+      label: 'Thống kê sự cố & Pareto',
+      icon: BarChart3,
     },
   ];
 
@@ -304,7 +331,25 @@ export const ProductionPage: React.FC = () => {
               canDelete={canDeleteShifts}
               plannedProductivityTph={metrics?.plannedProductivityTph}
               plannedRecoveryRatePct={metrics?.plannedRecoveryRatePct}
+              selectedShiftIds={selectedShiftIds}
+              onToggleSelectShift={(shiftId) => {
+                setSelectedShiftIds((prev) =>
+                  prev.includes(shiftId)
+                    ? prev.filter((id) => id !== shiftId)
+                    : [...prev, shiftId],
+                );
+              }}
+              onToggleSelectAll={(shiftIds) => setSelectedShiftIds(shiftIds)}
+              onOpenBatchWarehouseSync={() => setIsBatchWarehouseOpen(true)}
+              canBatchSyncWarehouse={canBatchSyncWarehouse}
             />
+          </div>
+        )}
+
+        {/* Tab 3: Incidents & Downtime Pareto */}
+        {activeTab === 'incidents' && (
+          <div className="space-y-6">
+            <IncidentAnalyticsTab lines={lines} />
           </div>
         )}
       </div>
@@ -348,6 +393,15 @@ export const ProductionPage: React.FC = () => {
         }}
         shift={deletingShift}
         isDeleting={deleteShiftMutation.isPending}
+      />
+
+      <BatchShiftWarehouseDialog
+        isOpen={isBatchWarehouseOpen}
+        onClose={() => setIsBatchWarehouseOpen(false)}
+        selectedShifts={selectedShifts}
+        onSuccess={() => {
+          setSelectedShiftIds([]);
+        }}
       />
     </PageContainer>
   );

@@ -432,14 +432,15 @@ export async function fetchStockBalances(params: StockBalanceFilterParams): Prom
     const warehouseIds = Array.from(new Set(formatted.map((f) => f.warehouse_id)));
     const { data: txSums } = await supabase
       .from('inventory_transactions')
-      .select('warehouse_id, item_id, quantity')
+      .select('warehouse_id, item_type, item_id, quantity')
       .in('warehouse_id', warehouseIds)
       .in('item_id', itemIds);
 
     if (txSums) {
+      // Map theo (warehouse_id, item_type, item_id) để khớp chính xác với từng dòng balance
       const sumMap = new Map<string, { inbound: number; outbound: number }>();
       for (const tx of txSums) {
-        const key = `${tx.warehouse_id}-${tx.item_id}`;
+        const key = `${tx.warehouse_id}-${tx.item_type}-${tx.item_id}`;
         const entry = sumMap.get(key) || { inbound: 0, outbound: 0 };
         const q = Number(tx.quantity) || 0;
         if (q > 0) entry.inbound += q;
@@ -447,10 +448,11 @@ export async function fetchStockBalances(params: StockBalanceFilterParams): Prom
         sumMap.set(key, entry);
       }
       formatted = formatted.map((b) => {
-        const key = `${b.warehouse_id}-${b.item_id}`;
+        const key = `${b.warehouse_id}-${b.item_type}-${b.item_id}`;
         const s = sumMap.get(key);
+        // Nếu có giao dịch thì lấy chuẩn xác từ giao dịch, nếu chưa có giao dịch thì fallback bảo toàn toán học
         const inQty = s ? s.inbound : (b.current_quantity > 0 ? b.current_quantity : 0);
-        const outQty = s ? s.outbound : 0;
+        const outQty = s ? s.outbound : (b.current_quantity < 0 ? Math.abs(b.current_quantity) : 0);
         return {
           ...b,
           total_inbound: inQty,
@@ -488,8 +490,9 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
   // Query transaction quantities to get accurate in/out totals per item & warehouse
   const { data: txList } = await supabase
     .from('inventory_transactions')
-    .select('warehouse_id, item_id, quantity');
+    .select('warehouse_id, item_type, item_id, quantity');
 
+  // Map transaction totals theo warehouse_id + item_id (cộng tất cả loại giao dịch của item trong kho đó)
   const txSumMap = new Map<string, { inbound: number; outbound: number }>();
   if (txList) {
     for (const tx of txList) {
@@ -502,30 +505,38 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
     }
   }
 
-  const itemGroupMap = new Map<string, ItemAggregatedStockBalance>();
+  // Gom nhóm theo từng item_id, bên trong có danh sách các kho duy nhất
+  const itemGroupMap = new Map<string, {
+    item_id: string;
+    item_type: 'material' | 'product' | 'byproduct';
+    item_code: string;
+    item_name: string;
+    category?: string;
+    category_label?: string;
+    unit_of_measure: string;
+    warehousesMap: Map<string, {
+      warehouse_id: string;
+      warehouse_code: string;
+      warehouse_name: string;
+      current_quantity: number;
+      reserved_quantity: number;
+      available_quantity: number;
+      total_inbound: number;
+      total_outbound: number;
+      last_transaction_at?: string;
+    }>;
+  }>();
 
   for (const b of (balances as unknown as StockBalanceQueryResult[]) || []) {
     const itemMeta = itemMap.get(b.item_id);
     const curr = Number(b.current_quantity) || 0;
     const reserved = Number(b.reserved_quantity) || 0;
     const avail = Math.max(0, curr - reserved);
-    const key = `${b.warehouse_id}-${b.item_id}`;
-    const txSum = txSumMap.get(key) || { inbound: curr > 0 ? curr : 0, outbound: 0 };
+    const whId = b.warehouse_id;
 
-    const whDetail = {
-      warehouse_id: b.warehouse_id,
-      warehouse_code: b.warehouses?.code || '',
-      warehouse_name: b.warehouses?.name || '',
-      current_quantity: curr,
-      reserved_quantity: reserved,
-      available_quantity: avail,
-      total_inbound: txSum.inbound,
-      total_outbound: txSum.outbound,
-    };
-
-    const existing = itemGroupMap.get(b.item_id);
-    if (!existing) {
-      itemGroupMap.set(b.item_id, {
+    let itemEntry = itemGroupMap.get(b.item_id);
+    if (!itemEntry) {
+      itemEntry = {
         item_id: b.item_id,
         item_type: b.item_type,
         item_code: itemMeta?.code || '---',
@@ -533,26 +544,71 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
         category: itemMeta?.category,
         category_label: itemMeta?.category_label,
         unit_of_measure: itemMeta?.unit || '',
+        warehousesMap: new Map(),
+      };
+      itemGroupMap.set(b.item_id, itemEntry);
+    }
+
+    // Merge vào kho tương ứng của item đó để tránh trùng lặp kho
+    const existingWh = itemEntry.warehousesMap.get(whId);
+    if (!existingWh) {
+      const key = `${whId}-${b.item_id}`;
+      const txSum = txSumMap.get(key) || {
+        inbound: curr > 0 ? curr : 0,
+        outbound: curr < 0 ? Math.abs(curr) : 0,
+      };
+
+      itemEntry.warehousesMap.set(whId, {
+        warehouse_id: whId,
+        warehouse_code: b.warehouses?.code || '',
+        warehouse_name: b.warehouses?.name || '',
+        current_quantity: curr,
+        reserved_quantity: reserved,
+        available_quantity: avail,
         total_inbound: txSum.inbound,
         total_outbound: txSum.outbound,
-        total_current_quantity: curr,
-        total_reserved_quantity: reserved,
-        total_available_quantity: avail,
-        warehouse_count: 1,
-        warehouses: [whDetail],
+        last_transaction_at: b.last_transaction_at,
       });
     } else {
-      existing.total_inbound += txSum.inbound;
-      existing.total_outbound += txSum.outbound;
-      existing.total_current_quantity += curr;
-      existing.total_reserved_quantity += reserved;
-      existing.total_available_quantity += avail;
-      existing.warehouse_count += 1;
-      existing.warehouses.push(whDetail);
+      // Nếu cùng kho mà có nhiều dòng (ví dụ điều chỉnh phân loại), cộng dồn số dư
+      existingWh.current_quantity += curr;
+      existingWh.reserved_quantity += reserved;
+      existingWh.available_quantity = Math.max(0, existingWh.current_quantity - existingWh.reserved_quantity);
+      if (b.last_transaction_at && (!existingWh.last_transaction_at || b.last_transaction_at > existingWh.last_transaction_at)) {
+        existingWh.last_transaction_at = b.last_transaction_at;
+      }
     }
   }
 
-  return Array.from(itemGroupMap.values()).sort((a, b) => a.item_code.localeCompare(b.item_code));
+  // Chuyển Map thành mảng ItemAggregatedStockBalance với tổng cộng chuẩn xác
+  const result: ItemAggregatedStockBalance[] = [];
+  for (const item of itemGroupMap.values()) {
+    const whList = Array.from(item.warehousesMap.values());
+    const totalInbound = whList.reduce((sum, w) => sum + w.total_inbound, 0);
+    const totalOutbound = whList.reduce((sum, w) => sum + w.total_outbound, 0);
+    const totalCurr = whList.reduce((sum, w) => sum + w.current_quantity, 0);
+    const totalReserved = whList.reduce((sum, w) => sum + w.reserved_quantity, 0);
+    const totalAvail = whList.reduce((sum, w) => sum + w.available_quantity, 0);
+
+    result.push({
+      item_id: item.item_id,
+      item_type: item.item_type,
+      item_code: item.item_code,
+      item_name: item.item_name,
+      category: item.category,
+      category_label: item.category_label,
+      unit_of_measure: item.unit_of_measure,
+      total_inbound: totalInbound,
+      total_outbound: totalOutbound,
+      total_current_quantity: totalCurr,
+      total_reserved_quantity: totalReserved,
+      total_available_quantity: totalAvail,
+      warehouse_count: whList.length,
+      warehouses: whList,
+    });
+  }
+
+  return result.sort((a, b) => a.item_code.localeCompare(b.item_code));
 }
 
 /**
