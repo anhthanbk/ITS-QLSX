@@ -1364,17 +1364,20 @@ export async function createProductionShift(
     values.standard_shift_hours - (values.total_downtime_hours || 0),
   );
   // Công suất = Nguyên liệu cấp / Giờ chạy (TPH)
-  const capacity =
+  const rawCapacity =
     runningHours > 0 && rawInput > 0
       ? Number((rawInput / runningHours).toFixed(2))
       : (runningHours > 0 && productOutputTons > 0 ? Number((productOutputTons / runningHours).toFixed(2)) : 0);
+  const capacity = Math.min(999999.99, Math.max(0, isNaN(rawCapacity) ? 0 : rawCapacity));
+
   // Thu hồi = Thành phẩm / Nguyên liệu * 100% (nếu ca sản xuất bán thành phẩm thì tính theo bán thành phẩm)
-  const recovery =
+  const rawRecovery =
     rawInput > 0 && productOutputTons > 0
       ? Number(((productOutputTons / rawInput) * 100).toFixed(2))
       : (rawInput > 0 && semiFinishedFromProds > 0
           ? Number(((semiFinishedFromProds / rawInput) * 100).toFixed(2))
           : (Number(values.actual_recovery_rate_pct) > 0 ? Number(values.actual_recovery_rate_pct) : 0));
+  const recovery = Math.min(100, Math.max(0, isNaN(rawRecovery) ? 0 : rawRecovery));
 
   const breakdown = { ...(values.downtime_breakdown || {}) };
   if (values.operator_name) {
@@ -1391,7 +1394,6 @@ export async function createProductionShift(
         shift_number: values.shift_number,
         standard_shift_hours: values.standard_shift_hours,
         total_downtime_hours: values.total_downtime_hours,
-        running_hours: runningHours,
         raw_material_input_tons: rawInput,
         product_output_tons: productOutputTons,
         byproduct_output_tons: byproductOutputTons,
@@ -1581,9 +1583,11 @@ export async function updateProductionShift(
   let calculatedRecovery: number | undefined = undefined;
   if (rawInput !== undefined) {
     if (rawInput > 0 && productOutputTons !== undefined && productOutputTons > 0) {
-      calculatedRecovery = Number(((productOutputTons / rawInput) * 100).toFixed(2));
+      calculatedRecovery = Math.min(100, Math.max(0, Number(((productOutputTons / rawInput) * 100).toFixed(2))));
     } else if (rawInput > 0 && semiFinishedSum !== undefined && semiFinishedSum > 0) {
-      calculatedRecovery = Number(((semiFinishedSum / rawInput) * 100).toFixed(2));
+      calculatedRecovery = Math.min(100, Math.max(0, Number(((semiFinishedSum / rawInput) * 100).toFixed(2))));
+    } else {
+      calculatedRecovery = 0;
     }
   }
 
@@ -1597,7 +1601,7 @@ export async function updateProductionShift(
   let calculatedCapacity: number | undefined = undefined;
   if (calculatedRunningHours !== undefined && rawInput !== undefined) {
     if (calculatedRunningHours > 0 && rawInput > 0) {
-      calculatedCapacity = Number((rawInput / calculatedRunningHours).toFixed(2));
+      calculatedCapacity = Math.min(999999.99, Math.max(0, Number((rawInput / calculatedRunningHours).toFixed(2))));
     }
   }
 
@@ -1621,7 +1625,6 @@ export async function updateProductionShift(
     ...(productOutputTons !== undefined ? { product_output_tons: productOutputTons } : {}),
     ...(byproductOutputTons !== undefined ? { byproduct_output_tons: byproductOutputTons } : {}),
     ...(calculatedRecovery !== undefined ? { actual_recovery_rate_pct: calculatedRecovery } : {}),
-    ...(calculatedRunningHours !== undefined ? { running_hours: calculatedRunningHours } : {}),
     ...(calculatedCapacity !== undefined ? { actual_capacity_tph: calculatedCapacity } : {}),
     ...(breakdown ? { downtime_breakdown: breakdown as unknown as Database['public']['Tables']['production_shifts']['Update']['downtime_breakdown'] } : {}),
     updated_at: new Date().toISOString(),
@@ -1629,6 +1632,7 @@ export async function updateProductionShift(
 
   delete (updatePayload as Record<string, unknown>).end_date;
   delete (updatePayload as Record<string, unknown>).status;
+  delete (updatePayload as Record<string, unknown>).running_hours;
 
   const { data, error } = await supabase
     .from('production_shifts')

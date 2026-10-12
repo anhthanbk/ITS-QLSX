@@ -460,6 +460,33 @@ export async function fetchStockBalances(params: StockBalanceFilterParams): Prom
         };
       });
     }
+
+    // Merge/consolidate multiple rows for the same item within the same warehouse (e.g. Bán thành phẩm or different item_types)
+    const consolidatedMap = new Map<string, InventoryStockBalance>();
+    for (const b of formatted) {
+      const itemCodeNorm = b.item_code && b.item_code !== '---' ? b.item_code.trim().toUpperCase() : b.item_id;
+      const key = `${b.warehouse_id}-${itemCodeNorm}`;
+      const existing = consolidatedMap.get(key);
+      if (!existing) {
+        consolidatedMap.set(key, { ...b });
+      } else {
+        existing.current_quantity += b.current_quantity;
+        existing.reserved_quantity += b.reserved_quantity;
+        existing.available_quantity = Math.max(0, existing.current_quantity - existing.reserved_quantity);
+        existing.total_inbound = (existing.total_inbound ?? 0) + (b.total_inbound ?? 0);
+        existing.total_outbound = (existing.total_outbound ?? 0) + (b.total_outbound ?? 0);
+        if (b.last_transaction_at && (!existing.last_transaction_at || b.last_transaction_at > existing.last_transaction_at)) {
+          existing.last_transaction_at = b.last_transaction_at;
+        }
+        // Prefer explicit category if one of them is semi_finished
+        if (b.category === 'semi_finished' || b.category_label?.toLowerCase().includes('bán thành phẩm')) {
+          existing.category = b.category;
+          existing.category_label = b.category_label;
+          existing.item_type = b.item_type;
+        }
+      }
+    }
+    formatted = Array.from(consolidatedMap.values());
   }
 
   const totalCount = count ?? 0;
@@ -534,7 +561,11 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
     const avail = Math.max(0, curr - reserved);
     const whId = b.warehouse_id;
 
-    let itemEntry = itemGroupMap.get(b.item_id);
+    const groupKey = (itemMeta?.code && itemMeta.code !== '---')
+      ? itemMeta.code.trim().toUpperCase()
+      : b.item_id;
+
+    let itemEntry = itemGroupMap.get(groupKey);
     if (!itemEntry) {
       itemEntry = {
         item_id: b.item_id,
@@ -546,7 +577,12 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
         unit_of_measure: itemMeta?.unit || '',
         warehousesMap: new Map(),
       };
-      itemGroupMap.set(b.item_id, itemEntry);
+      itemGroupMap.set(groupKey, itemEntry);
+    } else if (itemMeta?.category === 'semi_finished' || itemMeta?.category_label?.toLowerCase().includes('bán thành phẩm')) {
+      // Prioritize semi_finished category if merging entries
+      itemEntry.category = itemMeta.category;
+      itemEntry.category_label = itemMeta.category_label;
+      itemEntry.item_type = b.item_type;
     }
 
     // Merge vào kho tương ứng của item đó để tránh trùng lặp kho
@@ -615,11 +651,14 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
  * Fetch paginated inventory transactions
  */
 export async function fetchInventoryTransactions(params: TransactionFilterParams): Promise<PaginatedResult<InventoryTransaction>> {
-  const { search = '', warehouseId, transactionType, itemType, startDate, endDate, page, pageSize } = params;
+  const { search = '', warehouseId, itemId, transactionType, itemType, startDate, endDate, page, pageSize } = params;
   let query = supabase.from('inventory_transactions').select(TRANSACTION_SELECT_COLUMNS, { count: 'exact' });
 
   if (warehouseId && warehouseId !== 'all') {
     query = query.eq('warehouse_id', warehouseId);
+  }
+  if (itemId && itemId !== 'all') {
+    query = query.eq('item_id', itemId);
   }
   if (transactionType && transactionType !== 'all') {
     query = query.eq('transaction_type', transactionType);

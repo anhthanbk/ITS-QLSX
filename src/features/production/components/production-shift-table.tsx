@@ -25,6 +25,20 @@ interface ProductionShiftTableProps {
   canBatchSyncWarehouse?: boolean;
 }
 
+const formatDateDdMmYy = (dateStr?: string | null): string => {
+  if (!dateStr) return '';
+  const clean = (dateStr.split('T')[0] ?? '').trim();
+  const parts = clean.split('-');
+  const year = parts[0];
+  const month = parts[1];
+  const day = parts[2];
+  if (year && month && day) {
+    const yy = year.length === 4 ? year.slice(-2) : year;
+    return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${yy}`;
+  }
+  return dateStr;
+};
+
 export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
   data,
   isLoading,
@@ -98,7 +112,6 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
   const TARGET_PRODUCTIVITY_TPH = 50.0; // ~50 TPH thành phẩm/h chuẩn
   const TARGET_RECOVERY_PCT = 84.19; // 84.19% thu hồi chuẩn
   const TARGET_OUTPUT_TONS = 400.0; // ~400 tấn TP chuẩn / ca
-  const TARGET_OEE_PCT = 80.0; // 80% OEE chuẩn
 
   const renderMetricCell = (
     value: string | number,
@@ -108,10 +121,10 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
     <div className="flex items-center justify-center">
       <span
         className={cn(
-          'text-xs tracking-tight transition-colors',
+          'text-xs tracking-tight transition-colors font-bold',
           isMet
-            ? 'font-bold text-emerald-600 dark:text-emerald-400'
-            : 'font-semibold text-foreground',
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : 'text-rose-600 dark:text-rose-400',
         )}
       >
         {value}{unit ? ` ${unit}` : ''}
@@ -339,7 +352,6 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
               const isProdMet = actualProductivity >= plannedProductivity;
               const isRecMet = actualRecovery >= effectivePlannedRecovery;
               const isOutputMet = finishedOutput >= TARGET_OUTPUT_TONS;
-              const isOeeMet = oee >= TARGET_OEE_PCT;
               const isSelected = selectedShiftIds.includes(shift.id);
 
               return (
@@ -372,13 +384,15 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                         shift.downtime_breakdown?.is_date_range
                       );
                       const toDate = shift.end_date || shift.downtime_breakdown?.to_date;
+                      const formattedFrom = formatDateDdMmYy(shift.shift_date);
+                      const formattedTo = toDate ? formatDateDdMmYy(toDate) : '';
 
                       return (
                         <>
                           <div className="font-semibold text-foreground">
-                            {shift.shift_date}
-                            {isRange && toDate && toDate !== shift.shift_date && (
-                              <span className="text-muted-foreground font-normal"> → {toDate}</span>
+                            {formattedFrom}
+                            {isRange && formattedTo && toDate !== shift.shift_date && (
+                              <span> → {formattedTo}</span>
                             )}
                           </div>
                           {isRange ? (
@@ -405,13 +419,24 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                     </span>
                   </td>
 
-                  {/* 3. Thời gian vận hành: chỉ hiện số tg chay/tg dừng */}
+                  {/* 3. Thời gian vận hành: thời gian chạy (xanh/đỏ) / thời gian dừng (màu cam) */}
                   <td className="px-3 py-3 text-center">
-                    {renderMetricCell(
-                      `${runHours}h / ${shift.total_downtime_hours}h`,
-                      '',
-                      isRunHoursMet,
-                    )}
+                    <div className="flex items-center justify-center gap-1">
+                      <span
+                        className={cn(
+                          'text-xs tracking-tight transition-colors font-bold',
+                          isRunHoursMet
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-rose-600 dark:text-rose-400',
+                        )}
+                      >
+                        {runHours}h
+                      </span>
+                      <span className="text-muted-foreground text-xs font-normal">/</span>
+                      <span className="text-xs tracking-tight font-bold text-orange-600 dark:text-orange-400">
+                        {shift.total_downtime_hours}h
+                      </span>
+                    </div>
                   </td>
 
                   {/* 4. Công suất: chỉ hiện công suất (= nguyên liệu / thời gian vận hành) */}
@@ -479,13 +504,13 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                     )}
                   </td>
 
-                  {/* 8. OEE (tính lại) */}
+                  {/* 8. OEE (tính lại) - hiển thị màu tím */}
                   <td className="px-3 py-3 text-center">
-                    {renderMetricCell(
-                      `${oee}%`,
-                      '',
-                      isOeeMet,
-                    )}
+                    <div className="flex items-center justify-center">
+                      <span className="text-xs tracking-tight font-bold text-purple-600 dark:text-purple-400">
+                        {oee}%
+                      </span>
+                    </div>
                   </td>
 
                   {/* 9. Trạng thái kho */}
@@ -509,7 +534,7 @@ export const ProductionShiftTable: React.FC<ProductionShiftTableProps> = ({
                   </td>
 
                   {/* 10. Trưởng ca (người cập nhật) */}
-                  <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
+                  <td className="px-3 py-3 font-semibold text-foreground whitespace-nowrap">
                     {shift.operator_name || '---'}
                   </td>
 

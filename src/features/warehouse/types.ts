@@ -153,6 +153,7 @@ export interface StockBalanceFilterParams {
 export interface TransactionFilterParams {
   search?: string;
   warehouseId?: string;
+  itemId?: string;
   transactionType?: string;
   itemType?: string;
   startDate?: string;

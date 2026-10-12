@@ -244,6 +244,7 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
     reset,
     watch,
     setValue,
+    getValues,
     control,
     formState: { errors },
   } = useForm<ProductionShiftFormValues>({
@@ -766,7 +767,13 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
         }));
         replaceProducts(initialProds);
       } else {
-        replaceProducts([]);
+        const currentProducts = getValues('products_output') || [];
+        const userAdded = currentProducts.filter((p) => p.is_out_of_plan);
+        if (userAdded.length > 0) {
+          replaceProducts(userAdded);
+        } else {
+          replaceProducts([]);
+        }
       }
 
       if (planContext.materials && planContext.materials.length > 0) {
@@ -784,7 +791,7 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
         replaceMaterials([]);
       }
     }
-  }, [isOpen, isEditing, planContext, selectedLineId, selectedDate, replaceProducts, replaceMaterials]);
+  }, [isOpen, isEditing, planContext, selectedLineId, selectedDate, replaceProducts, replaceMaterials, getValues]);
 
   if (!isOpen) return null;
 
@@ -932,7 +939,7 @@ export const ProductionShiftFormDialog: React.FC<ProductionShiftFormDialogProps>
 
     const finalRecovery =
       finalRawInput > 0
-        ? Number((((finalFinished > 0 ? finalFinished : semiFinishedSum) / finalRawInput) * 100).toFixed(2))
+        ? Math.min(100, Math.max(0, Number((((finalFinished > 0 ? finalFinished : semiFinishedSum) / finalRawInput) * 100).toFixed(2))))
         : 0;
 
     await onSubmit({

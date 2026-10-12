@@ -13,11 +13,13 @@ import {
   Boxes,
   ArrowDownLeft,
   ArrowUpRight,
+  History,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { InventoryStockBalance, Warehouse } from '@/features/warehouse/types';
 import { ItemTypeBadge, WarehouseTypeBadge } from './warehouse-badges';
 import { useItemAggregatedStockBalances } from '../hooks/use-stock-balances';
+import { StockHistoryModal, type StockHistoryTargetItem } from './stock-history-modal';
 
 interface StockBalanceTableProps {
   data?: {
@@ -62,6 +64,18 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<'by_warehouse' | 'by_item'>('by_warehouse');
   const [expandedItemIds, setExpandedItemIds] = useState<Set<string>>(new Set());
+  const [historyTargetItem, setHistoryTargetItem] = useState<StockHistoryTargetItem | null>(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  const handleOpenHistory = (target: StockHistoryTargetItem) => {
+    setHistoryTargetItem(target);
+    setIsHistoryModalOpen(true);
+  };
+
+  const handleCloseHistory = () => {
+    setIsHistoryModalOpen(false);
+    setHistoryTargetItem(null);
+  };
 
   const toggleExpandItem = (itemId: string) => {
     setExpandedItemIds((prev) => {
@@ -186,7 +200,32 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
         };
         groupsMap.set(item.warehouse_id, group);
       }
-      group.items.push(item);
+
+      // Check duplicate items within same warehouse (e.g. Bán thành phẩm or different item_types)
+      const normCode = item.item_code && item.item_code !== '---' ? item.item_code.trim().toUpperCase() : item.item_id;
+      const existing = group.items.find((i) => {
+        const iCode = i.item_code && i.item_code !== '---' ? i.item_code.trim().toUpperCase() : i.item_id;
+        return iCode === normCode || i.item_id === item.item_id;
+      });
+
+      if (existing) {
+        existing.current_quantity += item.current_quantity;
+        existing.reserved_quantity += item.reserved_quantity;
+        existing.available_quantity = Math.max(0, existing.current_quantity - existing.reserved_quantity);
+        existing.total_inbound = (existing.total_inbound ?? 0) + (item.total_inbound ?? 0);
+        existing.total_outbound = (existing.total_outbound ?? 0) + (item.total_outbound ?? 0);
+        if (item.last_transaction_at && (!existing.last_transaction_at || item.last_transaction_at > existing.last_transaction_at)) {
+          existing.last_transaction_at = item.last_transaction_at;
+        }
+        if (item.category === 'semi_finished' || item.category_label?.toLowerCase().includes('bán thành phẩm')) {
+          existing.category = item.category;
+          existing.category_label = item.category_label;
+          existing.item_type = item.item_type;
+        }
+      } else {
+        group.items.push({ ...item });
+      }
+
       group.totalInbound += item.total_inbound ?? 0;
       group.totalOutbound += item.total_outbound ?? 0;
       group.totalCurrentQuantity += item.current_quantity ?? 0;
@@ -515,7 +554,22 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                   {group.items.map((item, idx) => (
                                     <tr
                                       key={`${item.warehouse_id}-${item.item_id}-${idx}`}
-                                      className="hover:bg-accent/30 transition-colors"
+                                      onClick={() =>
+                                        handleOpenHistory({
+                                          itemId: item.item_id,
+                                          itemCode: item.item_code || '—',
+                                          itemName: item.item_name || 'Chưa đặt tên',
+                                          unitOfMeasure: item.unit_of_measure,
+                                          itemType: item.item_type,
+                                          category: item.category,
+                                          categoryLabel: item.category_label,
+                                          warehouseId: item.warehouse_id,
+                                          warehouseName: group.warehouseName,
+                                          warehouseCode: group.warehouseCode,
+                                        })
+                                      }
+                                      className="hover:bg-accent/40 cursor-pointer transition-colors"
+                                      title="Nhấp để xem chi tiết lịch sử nhập xuất kho"
                                     >
                                       <td className="py-3 px-4 whitespace-nowrap">
                                         <ItemTypeBadge
@@ -527,7 +581,11 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                       <td className="py-3 px-4 font-mono font-bold whitespace-nowrap text-foreground">
                                         {item.item_code}
                                       </td>
-                                      <td className="py-3 px-4 font-medium text-foreground">{item.item_name}</td>
+                                      <td className="py-3 px-4 font-medium text-foreground">
+                                        <span className="hover:underline hover:text-primary">
+                                          {item.item_name}
+                                        </span>
+                                      </td>
                                       <td className="py-3 px-4 text-right font-medium text-emerald-600 dark:text-emerald-400">
                                         {(item.total_inbound ?? 0).toLocaleString('vi-VN')}
                                       </td>
@@ -549,17 +607,45 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                           : '—'}
                                       </td>
                                       <td className="py-3 px-4 text-right whitespace-nowrap">
-                                        {canTransact && (
+                                        <div
+                                          className="flex items-center justify-end gap-1.5"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
                                           <Button
-                                            variant="outline"
+                                            variant="ghost"
                                             size="sm"
-                                            onClick={() => onAdjustStock(item)}
-                                            className="h-7 gap-1 px-2 text-[11px]"
+                                            onClick={() =>
+                                              handleOpenHistory({
+                                                itemId: item.item_id,
+                                                itemCode: item.item_code || '—',
+                                                itemName: item.item_name || 'Chưa đặt tên',
+                                                unitOfMeasure: item.unit_of_measure,
+                                                itemType: item.item_type,
+                                                category: item.category,
+                                                categoryLabel: item.category_label,
+                                                warehouseId: item.warehouse_id,
+                                                warehouseName: group.warehouseName,
+                                                warehouseCode: group.warehouseCode,
+                                              })
+                                            }
+                                            className="h-7 gap-1 px-2 text-[11px] text-primary hover:text-primary hover:bg-primary/10"
+                                            title="Xem lịch sử nhập xuất của mặt hàng này"
                                           >
-                                            <Sliders className="h-3 w-3 text-primary" />
-                                            Kiểm kê
+                                            <History className="h-3 w-3" />
+                                            Lịch sử
                                           </Button>
-                                        )}
+                                          {canTransact && (
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => onAdjustStock(item)}
+                                              className="h-7 gap-1 px-2 text-[11px]"
+                                            >
+                                              <Sliders className="h-3 w-3 text-primary" />
+                                              Kiểm kê
+                                            </Button>
+                                          )}
+                                        </div>
                                       </td>
                                     </tr>
                                   ))}
@@ -670,6 +756,7 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                         <th className="py-3 px-4 text-right">Tổng Khả Dụng</th>
                         <th className="py-3 px-4">Đơn vị</th>
                         <th className="py-3 px-4 text-center">Phân bổ kho</th>
+                        <th className="py-3 px-4 text-right">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/60">
@@ -728,12 +815,35 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                   {item.warehouses.length} kho
                                 </span>
                               </td>
+                              <td className="py-3.5 px-4 text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenHistory({
+                                      itemId: item.item_id,
+                                      itemCode: item.item_code,
+                                      itemName: item.item_name,
+                                      unitOfMeasure: item.unit_of_measure,
+                                      itemType: item.item_type,
+                                      category: item.category,
+                                      categoryLabel: item.category_label,
+                                    });
+                                  }}
+                                  className="h-7 gap-1 px-2 text-[11px] text-primary hover:text-primary hover:bg-primary/10"
+                                  title="Xem toàn bộ lịch sử giao dịch toàn công ty của vật tư này"
+                                >
+                                  <History className="h-3 w-3" />
+                                  Lịch sử
+                                </Button>
+                              </td>
                             </tr>
 
                             {/* Sub-row: Chi tiết số dư theo từng kho */}
                             {isExpanded && (
                               <tr className="bg-muted/15">
-                                <td colSpan={10} className="p-0">
+                                <td colSpan={11} className="p-0">
                                   <div className="border-t border-border/80 p-4 pl-12">
                                     <div className="mb-2 flex items-center justify-between">
                                       <h4 className="text-[12px] font-semibold text-foreground flex items-center gap-1.5">
@@ -784,37 +894,62 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                                   : 'Chưa giao dịch'}
                                               </td>
                                               <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                                                {canTransact && (
+                                                <div className="flex items-center justify-end gap-1">
                                                   <Button
-                                                    variant="outline"
+                                                    variant="ghost"
                                                     size="sm"
                                                     onClick={() =>
-                                                      onAdjustStock({
-                                                        id: `${wh.warehouse_id}-${item.item_id}`,
-                                                        warehouse_id: wh.warehouse_id,
-                                                        warehouse_code: wh.warehouse_code,
-                                                        warehouse_name: wh.warehouse_name,
-                                                        item_id: item.item_id,
-                                                        item_code: item.item_code,
-                                                        item_name: item.item_name,
-                                                        item_type: item.item_type,
+                                                      handleOpenHistory({
+                                                        itemId: item.item_id,
+                                                        itemCode: item.item_code,
+                                                        itemName: item.item_name,
+                                                        unitOfMeasure: item.unit_of_measure,
+                                                        itemType: item.item_type,
                                                         category: item.category,
-                                                        category_label: item.category_label,
-                                                        current_quantity: wh.current_quantity,
-                                                        reserved_quantity: wh.reserved_quantity,
-                                                        available_quantity: wh.available_quantity,
-                                                        unit_of_measure: item.unit_of_measure,
-                                                        last_transaction_at: wh.last_transaction_at || new Date().toISOString(),
-                                                        total_inbound: wh.total_inbound,
-                                                        total_outbound: wh.total_outbound,
+                                                        categoryLabel: item.category_label,
+                                                        warehouseId: wh.warehouse_id,
+                                                        warehouseName: wh.warehouse_name,
+                                                        warehouseCode: wh.warehouse_code,
                                                       })
                                                     }
-                                                    className="h-6 gap-1 px-2 text-[11px]"
+                                                    className="h-6 gap-1 px-2 text-[11px] text-primary hover:text-primary hover:bg-primary/10"
+                                                    title="Xem lịch sử nhập xuất tại kho này"
                                                   >
-                                                    <Sliders className="h-3 w-3 text-primary" />
-                                                    Kiểm kê kho này
+                                                    <History className="h-3 w-3" />
+                                                    Lịch sử
                                                   </Button>
-                                                )}
+                                                  {canTransact && (
+                                                    <Button
+                                                      variant="outline"
+                                                      size="sm"
+                                                      onClick={() =>
+                                                        onAdjustStock({
+                                                          id: `${wh.warehouse_id}-${item.item_id}`,
+                                                          warehouse_id: wh.warehouse_id,
+                                                          warehouse_code: wh.warehouse_code,
+                                                          warehouse_name: wh.warehouse_name,
+                                                          item_id: item.item_id,
+                                                          item_code: item.item_code,
+                                                          item_name: item.item_name,
+                                                          item_type: item.item_type,
+                                                          category: item.category,
+                                                          category_label: item.category_label,
+                                                          current_quantity: wh.current_quantity,
+                                                          reserved_quantity: wh.reserved_quantity,
+                                                          available_quantity: wh.available_quantity,
+                                                          unit_of_measure: item.unit_of_measure,
+                                                          last_transaction_at: wh.last_transaction_at || new Date().toISOString(),
+                                                          total_inbound: wh.total_inbound,
+                                                          total_outbound: wh.total_outbound,
+                                                        })
+                                                      }
+                                                      className="h-6 gap-1 px-2 text-[11px]"
+                                                    >
+                                                      <Sliders className="h-3 w-3 text-primary" />
+                                                      Kiểm kê
+                                                    </Button>
+                                                  )}
+                                                </div>
                                               </td>
                                             </tr>
                                           ))}
@@ -841,6 +976,15 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
             </div>
           )}
         </>
+      )}
+
+      {/* Modal Lịch sử nhập xuất kho */}
+      {isHistoryModalOpen && historyTargetItem && (
+        <StockHistoryModal
+          isOpen={isHistoryModalOpen}
+          item={historyTargetItem}
+          onClose={handleCloseHistory}
+        />
       )}
     </div>
   );
