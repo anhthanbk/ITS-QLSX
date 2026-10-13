@@ -3,6 +3,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import React from 'react';
 import { ProductionMetricFilterBar } from '@/features/production/components/production-metric-filter-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ProductionLine } from '@/features/production/types';
 
 // Mock hook to return known planned years
 vi.mock('@/features/production/hooks/use-production-plans', () => ({
@@ -19,20 +20,21 @@ const queryClient = new QueryClient({
 });
 
 const renderWithQuery = (ui: React.ReactElement) => {
-  return render(
-    <QueryClientProvider client={queryClient}>
-      {ui}
-    </QueryClientProvider>,
-  );
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 };
 
-const mockLines = [
+const mockLines: ProductionLine[] = [
   {
     id: 'line-1',
     code: 'HPS1',
     name: 'Tuyến rửa 1',
-    is_active: true,
+    department_id: null,
     designed_capacity_tph: 150,
+    standard_shift_hours: 8,
+    shifts_per_day: 3,
+    status: 'active',
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
   },
 ];
 
