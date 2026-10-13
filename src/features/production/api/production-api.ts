@@ -424,6 +424,24 @@ export async function fetchProductionPlans(
 }
 
 /**
+ * Fetches distinct years that have plans in production_monthly_plans.
+ */
+export async function fetchProductionPlannedYears(): Promise<number[]> {
+  const { data, error } = await supabase
+    .from('production_monthly_plans')
+    .select('year')
+    .order('year', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching production planned years:', error);
+    return [];
+  }
+
+  const rawYears = (data || []).map((row: { year: number }) => Number(row.year)).filter((y) => !isNaN(y) && y > 0);
+  return Array.from(new Set(rawYears)).sort((a, b) => a - b);
+}
+
+/**
  * Fetches the entire 12-month Annual Production Plan for a specific year and line,
  * including product allocations and material consumptions.
  */

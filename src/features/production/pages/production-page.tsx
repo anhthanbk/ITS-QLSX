@@ -15,6 +15,7 @@ import type {
 // Hooks
 import { useProductionLines } from '../hooks/use-production-lines';
 import { useProductionMetrics } from '../hooks/use-production-metrics';
+import { useProductionPlannedYears } from '../hooks/use-production-plans';
 import {
   useProductionShifts,
   useCreateProductionShift,
@@ -96,6 +97,7 @@ export const ProductionPage: React.FC = () => {
 
   // Shared master data
   const { data: lines = [] } = useProductionLines();
+  const { data: plannedYears = [] } = useProductionPlannedYears();
 
   // Metrics filters state (lineId, months, years)
   const now = new Date();
@@ -189,14 +191,19 @@ export const ProductionPage: React.FC = () => {
           onMonthsChange={(months) => setMetricFilters((prev) => ({ ...prev, months }))}
           selectedYears={metricFilters.years || []}
           onYearsChange={(years) => setMetricFilters((prev) => ({ ...prev, years }))}
+          availableYears={plannedYears}
           lines={lines}
-          onReset={() =>
+          onReset={() => {
+            const fallbackYear = now.getFullYear();
+            const defaultYear = plannedYears.includes(fallbackYear)
+              ? fallbackYear
+              : (plannedYears[plannedYears.length - 1] ?? fallbackYear);
             setMetricFilters({
               lineId: 'all',
               months: [],
-              years: [now.getFullYear()],
-            })
-          }
+              years: [defaultYear],
+            });
+          }}
         />
 
         {/* KPI Metrics Summary Bar (4 Cards) */}
