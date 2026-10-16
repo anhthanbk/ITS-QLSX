@@ -89,6 +89,12 @@ export const navigationItems: NavItem[] = [
         path: '/production/shifts',
         requiredPermission: ['production.shift.view', 'production.shift.read'],
       },
+      {
+        id: 'production-incidents',
+        title: 'Thống kê sự cố & Pareto',
+        path: '/production/incidents',
+        requiredPermission: ['production.shift.view', 'production.shift.read'],
+      },
     ],
   },
 
@@ -256,7 +262,6 @@ export const navigationItems: NavItem[] = [
     title: 'Kinh doanh & Mua sắm',
     path: '/sales',
     icon: ShoppingCart,
-    requiredPermission: 'sales.order.view',
     children: [
       {
         id: 'sales-orders',
@@ -266,7 +271,7 @@ export const navigationItems: NavItem[] = [
       },
       {
         id: 'sales-customers',
-        title: 'Khách hàng & đối tác',
+        title: 'Danh mục Khách hàng',
         path: '/sales/customers',
         requiredPermission: 'sales.order.view',
       },
@@ -280,6 +285,12 @@ export const navigationItems: NavItem[] = [
         id: 'procurement-orders',
         title: 'Đơn đặt hàng NCC (PO)',
         path: '/procurement/orders',
+        requiredPermission: 'sales.order.view',
+      },
+      {
+        id: 'procurement-suppliers',
+        title: 'Danh mục Nhà cung cấp',
+        path: '/procurement/suppliers',
         requiredPermission: 'sales.order.view',
       },
     ],

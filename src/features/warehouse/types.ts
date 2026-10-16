@@ -118,6 +118,7 @@ export interface InventoryTransaction {
   unit_cost: number;
   reference_doc_type: string | null;
   reference_doc_id: string | null;
+  production_period_code?: string | null;
   notes: string | null;
   created_by: string | null;
   created_by_name?: string | null;
@@ -132,6 +133,8 @@ export interface PaginatedResult<T> {
   page: number;
   pageSize: number;
   totalPages: number;
+  totalInbound?: number;
+  totalOutbound?: number;
 }
 
 export interface WarehouseFilterParams {
@@ -153,6 +156,7 @@ export interface StockBalanceFilterParams {
 export interface TransactionFilterParams {
   search?: string;
   warehouseId?: string;
+  itemId?: string;
   transactionType?: string;
   itemType?: string;
   startDate?: string;

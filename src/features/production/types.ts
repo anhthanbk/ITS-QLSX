@@ -115,11 +115,13 @@ export type ShiftStatus = 'in_progress' | 'completed' | 'verified';
 export interface ShiftMaterialConsumption {
   material_id?: string;
   resource_name: string;
-  category: 'material' | 'fuel' | 'supply';
+  category: 'material' | 'fuel' | 'energy' | 'supply' | 'semi_finished';
   unit_of_measure: string;
   planned_norm?: number;
   actual_quantity: number;
   notes?: string;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
 }
 
 export interface ShiftProductOutput {
@@ -130,6 +132,9 @@ export interface ShiftProductOutput {
   unit_of_measure: string;
   is_out_of_plan: boolean;
   quantity_tons: number;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
+  storage_location?: string | null;
 }
 
 export interface ShiftDowntimeEvent {
@@ -139,7 +144,12 @@ export interface ShiftDowntimeEvent {
   end_time: string;   // "HH:mm" e.g. "08:45"
   duration_minutes?: number;
   duration_hours: number;
+  machine_id?: string | null;
+  equipment_code?: string | null;
+  equipment_name?: string | null;
   incident_category?: string | null;
+  shutdown_type?: string | null;
+  maintenance_type?: string | null;
   reason?: string | null;
   action_taken?: string | null;
 }
@@ -187,8 +197,34 @@ export interface ProductionShift {
   materials_consumption?: ShiftMaterialConsumption[];
   products_output?: ShiftProductOutput[];
   downtime_breakdown?: ShiftDowntimeBreakdown;
+  warehouse_synced?: boolean;
+  warehouse_synced_at?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface BatchShiftWarehouseSyncItem {
+  id?: string;
+  item_type: 'product' | 'byproduct' | 'material';
+  item_id: string;
+  item_code: string;
+  item_name: string;
+  unit_of_measure: string;
+  total_quantity: number;
+  warehouse_id: string;
+  warehouse_name?: string;
+  storage_location?: string | null;
+  shift_ids: string[];
+  shift_codes: string[];
+}
+
+export interface BatchShiftWarehouseSyncPayload {
+  selected_shift_ids: string[];
+  products: BatchShiftWarehouseSyncItem[];
+  semi_finished_products?: BatchShiftWarehouseSyncItem[];
+  byproducts: BatchShiftWarehouseSyncItem[];
+  materials: BatchShiftWarehouseSyncItem[];
+  notes?: string | null;
 }
 
 export type DowntimeCategory =
@@ -405,7 +441,7 @@ export interface ProductionMetrics {
 // 6. ANNUAL PRODUCTION PLANNING (LẬP KẾ HOẠCH SẢN XUẤT NĂM)
 // ==========================================
 
-export type MaterialCategoryGroup = 'material' | 'fuel' | 'supply';
+export type MaterialCategoryGroup = 'material' | 'fuel' | 'energy' | 'supply';
 
 export type PlanProductClassification = 'finished_good' | 'semi_finished' | 'by_product';
 
@@ -491,6 +527,78 @@ export function normalizeProductType(type?: string | null): PlanProductClassific
  * Kiểm tra xem một sản phẩm có phải là sản phẩm / thành phẩm chính hay không.
  * Loại trừ hoàn toàn phụ phẩm, bán thành phẩm (MM, Magmin, VFS, FSAP, v.v.).
  */
+/**
+ * Kiểm tra xem một sản phẩm có phải là Phụ phẩm (Byproduct) hay không.
+ * Danh mục phụ phẩm thực tế tại nhà máy: MM, MAGMIN, VFS, FSAP,...
+ */
+export function isByProduct(item?: {
+  product_sku?: string | null;
+  product_name?: string | null;
+  product_type?: string | null;
+}): boolean {
+  if (!item) return false;
+
+  if (item.product_type) {
+    const norm = normalizeProductType(item.product_type);
+    if (norm === 'by_product') return true;
+    if (norm === 'semi_finished' || norm === 'finished_good') return false;
+  }
+
+  const sku = (item.product_sku || '').trim().toLowerCase();
+  const name = (item.product_name || '').trim().toLowerCase();
+
+  return (
+    sku === 'mm' ||
+    sku === 'magmin' ||
+    sku === 'vfs' ||
+    sku === 'fsap' ||
+    sku.startsWith('mm-') ||
+    sku.endsWith('-mm') ||
+    name.includes('phụ phẩm') ||
+    name.includes('magmin') ||
+    name.includes('vfs') ||
+    name.includes('fsap')
+  );
+}
+
+/**
+ * Kiểm tra xem một sản phẩm có phải là Bán thành phẩm (Semi-finished good) hay không.
+ * Bán thành phẩm được tính thu hồi riêng, không tính vào nguyên liệu hoặc thành phẩm.
+ * Lưu ý: Phụ phẩm (FSAP, VFS, MAGMIN) TUYỆT ĐỐI không phải là bán thành phẩm.
+ */
+export function isSemiFinishedProduct(item?: {
+  product_sku?: string | null;
+  product_name?: string | null;
+  product_type?: string | null;
+}): boolean {
+  if (!item) return false;
+
+  if (item.product_type) {
+    const norm = normalizeProductType(item.product_type);
+    if (norm === 'semi_finished') return true;
+    if (norm === 'by_product' || norm === 'finished_good') return false;
+  }
+
+  // Nếu đã là phụ phẩm theo SKU/tên thì không bao giờ là bán thành phẩm
+  if (isByProduct(item)) {
+    return false;
+  }
+
+  const sku = (item.product_sku || '').trim().toLowerCase();
+  const name = (item.product_name || '').trim().toLowerCase();
+
+  return (
+    sku.startsWith('btp') ||
+    sku.includes('btp') ||
+    sku.includes('semi') ||
+    name.includes('bán thành phẩm')
+  );
+}
+
+/**
+ * Kiểm tra xem một sản phẩm có phải là sản phẩm / thành phẩm chính hay không.
+ * Loại trừ hoàn toàn phụ phẩm và bán thành phẩm.
+ */
 export function isFinishedProduct(item?: {
   product_sku?: string | null;
   product_name?: string | null;
@@ -508,10 +616,14 @@ export function isFinishedProduct(item?: {
     }
   }
 
+  // Không phải phụ phẩm và không phải bán thành phẩm
+  if (isByProduct(item) || isSemiFinishedProduct(item)) {
+    return false;
+  }
+
   const sku = (item.product_sku || '').trim().toLowerCase();
   const name = (item.product_name || '').trim().toLowerCase();
 
-  // Danh mục phụ phẩm thực tế tại nhà máy: MM, MAGMIN, VFS, FSAP
   if (
     sku === 'mm' ||
     sku === 'magmin' ||
@@ -519,12 +631,14 @@ export function isFinishedProduct(item?: {
     sku === 'fsap' ||
     sku.startsWith('mm-') ||
     sku.endsWith('-mm') ||
+    sku.startsWith('btp') ||
+    sku.includes('btp') ||
+    sku.includes('semi') ||
     sku.includes('magmin') ||
     sku.includes('vfs') ||
     sku.includes('fsap') ||
     name.includes('phụ phẩm') ||
     name.includes('bán thành phẩm') ||
-    name.includes('sau chế biến') ||
     name.includes('magmin') ||
     name.includes('vfs') ||
     name.includes('fsap')
@@ -545,4 +659,63 @@ export interface AnnualPlanData {
   timePlan: Record<number, AnnualPlanTimeMonth>;
   targetQualityPct: Record<number, number>; // Month 1..12 -> %
 }
+
+// 7. Downtime Incident & Pareto Analytics
+export interface DowntimeIncidentRecord {
+  id: string;
+  shift_id: string;
+  shift_code?: string;
+  shift_date: string;
+  shift_number: number;
+  line_id: string;
+  line_code?: string;
+  line_name?: string;
+  type: 'breakdown_incident' | 'planned_maintenance' | 'scheduled_shutdown';
+  machine_id?: string | null;
+  equipment_code?: string | null;
+  equipment_name?: string | null;
+  incident_category?: string | null;
+  shutdown_type?: string | null;
+  maintenance_type?: string | null;
+  reason: string;
+  action_taken?: string | null;
+  duration_minutes: number;
+  duration_hours: number;
+  start_time: string;
+  end_time: string;
+  status: string;
+  operator_name?: string;
+}
+
+export interface ParetoItem {
+  key: string;
+  label: string;
+  count: number;
+  duration_hours: number;
+  percentage: number;
+  cumulative_percentage: number;
+  is_in_vital_few: boolean;
+}
+
+export interface IncidentAnalyticsFilters {
+  lineId?: string;
+  fromDate?: string;
+  toDate?: string;
+  downtimeType?: 'all' | 'breakdown_incident' | 'planned_maintenance' | 'scheduled_shutdown';
+  dimension?: 'incident_category' | 'equipment_code';
+  search?: string;
+}
+
+export interface IncidentAIInsight {
+  vitalFewSummary: string;
+  frequencyVsDurationComment: string;
+  topBottleneckEquipment: string;
+  recommendations: Array<{
+    priority: 'urgent' | 'medium' | 'preventive';
+    title: string;
+    description: string;
+    affectedKey?: string;
+  }>;
+}
+
 

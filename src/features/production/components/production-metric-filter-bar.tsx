@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Filter, RotateCcw, Calendar, Layers, ChevronDown, Check } from 'lucide-react';
 import type { ProductionLine } from '../types';
+import { useProductionPlannedYears } from '../hooks/use-production-plans';
 
 interface ProductionMetricFilterBarProps {
   lineId: string;
@@ -10,6 +11,7 @@ interface ProductionMetricFilterBarProps {
   onMonthsChange?: (months: number[]) => void;
   selectedYears?: number[];
   onYearsChange?: (years: number[]) => void;
+  availableYears?: number[];
   // Backwards compatibility props
   month?: number;
   onMonthChange?: (month: number) => void;
@@ -19,7 +21,6 @@ interface ProductionMetricFilterBarProps {
   onReset: () => void;
 }
 
-const AVAILABLE_YEARS = [2024, 2025, 2026, 2027, 2028, 2029, 2030];
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 
 export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps> = ({
@@ -29,6 +30,7 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
   onMonthsChange,
   selectedYears = [],
   onYearsChange,
+  availableYears,
   month,
   onMonthChange,
   year,
@@ -37,7 +39,15 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
   onReset,
 }) => {
   const selectedLine = lines.find((l) => l.id === lineId);
-  const now = new Date();
+  const now = useMemo(() => new Date(), []);
+
+  // Fetch planned years dynamically from database
+  const { data: fetchedYears = [] } = useProductionPlannedYears();
+  const yearsList = useMemo(() => {
+    const list = availableYears && availableYears.length > 0 ? availableYears : fetchedYears;
+    if (list.length > 0) return [...list].sort((a, b) => a - b);
+    return [now.getFullYear()];
+  }, [availableYears, fetchedYears, now]);
 
   // Normalized active months (empty = all)
   const activeMonths =
@@ -48,19 +58,19 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
         : [];
 
   // Normalized active years (empty = all)
-  const activeYears =
-    selectedYears.length > 0
-      ? selectedYears
-      : year !== undefined && year > 0
-        ? [year]
-        : [now.getFullYear()];
+  const activeYears = useMemo(() => {
+    if (selectedYears.length > 0) return selectedYears;
+    if (year !== undefined && year > 0) return [year];
+    if (yearsList.includes(now.getFullYear())) return [now.getFullYear()];
+    return [yearsList[yearsList.length - 1] ?? now.getFullYear()];
+  }, [selectedYears, year, yearsList, now]);
 
   const [isMonthOpen, setIsMonthOpen] = useState(false);
   const [isYearOpen, setIsYearOpen] = useState(false);
   const monthRef = useRef<HTMLDivElement>(null);
   const yearRef = useRef<HTMLDivElement>(null);
 
-  // Close popovers on click outside
+  // Close popovers on click outside or Escape key
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (monthRef.current && !monthRef.current.contains(e.target as Node)) {
@@ -70,8 +80,18 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
         setIsYearOpen(false);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsMonthOpen(false);
+        setIsYearOpen(false);
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   // Handlers for month selection
@@ -105,7 +125,7 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
       if (onYearChange) onYearChange(y);
       return;
     }
-    const isAll = activeYears.length === 0 || activeYears.length === AVAILABLE_YEARS.length;
+    const isAll = activeYears.length === 0 || activeYears.length === yearsList.length;
     if (isAll) {
       onYearsChange([y]);
     } else if (activeYears.includes(y)) {
@@ -113,7 +133,7 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
       onYearsChange(next.length === 0 ? [] : next);
     } else {
       const next = [...activeYears, y].sort((a, b) => a - b);
-      onYearsChange(next.length === AVAILABLE_YEARS.length ? [] : next);
+      onYearsChange(next.length === yearsList.length ? [] : next);
     }
   };
 
@@ -133,7 +153,7 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
         ? `Tháng ${[...activeMonths].sort((a, b) => a - b).join(', ')}`
         : `${activeMonths.length} tháng đã chọn`;
 
-  const isAllYearsSelected = activeYears.length === 0 || activeYears.length === AVAILABLE_YEARS.length;
+  const isAllYearsSelected = activeYears.length === 0 || activeYears.length === yearsList.length;
   const yearLabel = isAllYearsSelected
     ? 'Tất cả các năm'
     : activeYears.length === 1
@@ -142,15 +162,18 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
         ? `${[...activeYears].sort((a, b) => a - b).join(', ')}`
         : `${activeYears.length} năm đã chọn`;
 
+  const defaultYear = yearsList.includes(now.getFullYear())
+    ? now.getFullYear()
+    : (yearsList[yearsList.length - 1] ?? now.getFullYear());
+
   const isDefaultFilter =
     lineId === 'all' &&
-    activeMonths.length === 1 &&
-    activeMonths[0] === now.getMonth() + 1 &&
+    activeMonths.length === 0 &&
     activeYears.length === 1 &&
-    activeYears[0] === now.getFullYear();
+    activeYears[0] === defaultYear;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/70 px-4 py-2.5 shadow-sm backdrop-blur-sm">
+    <div className="relative z-30 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-2.5 shadow-sm">
       {/* Left side: Title & selectors */}
       <div className="flex flex-wrap items-center gap-2.5">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground mr-1">
@@ -177,7 +200,7 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
         </div>
 
         {/* Lọc Tháng (Multi-select) */}
-        <div className="relative" ref={monthRef}>
+        <div className={`relative ${isMonthOpen ? 'z-50' : ''}`} ref={monthRef}>
           <button
             type="button"
             onClick={() => {
@@ -197,7 +220,7 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
           </button>
 
           {isMonthOpen && (
-            <div className="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-border bg-popover p-3 shadow-xl backdrop-blur-md animate-in fade-in-0 zoom-in-95">
+            <div className="absolute left-0 top-full z-50 mt-1.5 w-72 rounded-xl border border-border bg-card p-3 shadow-2xl animate-in fade-in-0 zoom-in-95">
               <div className="flex items-center justify-between border-b border-border pb-2 mb-2.5">
                 <span className="text-xs font-bold text-foreground">Chọn tháng sản xuất</span>
                 <button
@@ -249,7 +272,7 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
         </div>
 
         {/* Lọc Năm (Multi-select) */}
-        <div className="relative" ref={yearRef}>
+        <div className={`relative ${isYearOpen ? 'z-50' : ''}`} ref={yearRef}>
           <button
             type="button"
             onClick={() => {
@@ -268,7 +291,7 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
           </button>
 
           {isYearOpen && (
-            <div className="absolute left-0 top-full z-50 mt-1.5 w-60 rounded-xl border border-border bg-popover p-3 shadow-xl backdrop-blur-md animate-in fade-in-0 zoom-in-95">
+            <div className="absolute left-0 top-full z-50 mt-1.5 w-64 rounded-xl border border-border bg-card p-3 shadow-2xl animate-in fade-in-0 zoom-in-95">
               <div className="flex items-center justify-between border-b border-border pb-2 mb-2.5">
                 <span className="text-xs font-bold text-foreground">Chọn năm kế hoạch</span>
                 <button
@@ -285,7 +308,7 @@ export const ProductionMetricFilterBar: React.FC<ProductionMetricFilterBarProps>
               </div>
 
               <div className="grid grid-cols-2 gap-1.5">
-                {AVAILABLE_YEARS.map((y) => {
+                {yearsList.map((y) => {
                   const isSelected = isAllYearsSelected || activeYears.includes(y);
                   return (
                     <button

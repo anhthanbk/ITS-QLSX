@@ -281,14 +281,14 @@ async function getItemMetadataMap() {
   >();
 
   const CATEGORY_LABELS: Record<string, string> = {
-    raw_material: 'Nguyên vật liệu chính',
+    raw_material: 'Nguyên vật liệu',
     chemical: 'Hóa chất công nghiệp',
-    spare_part: 'Phụ tùng & Linh kiện cơ điện',
-    packaging: 'Vật tư bao bì & Đóng gói',
-    consumable: 'Vật tư tiêu hao / BHLĐ',
+    spare_part: 'Phụ tùng cơ điện',
+    packaging: 'Bao bì & Đóng gói',
+    consumable: 'Tiêu hao / BHLĐ',
     fuel_energy: 'Nhiên liệu & Năng lượng',
-    other: 'Vật tư phụ trợ khác',
-    finished_good: 'Thành phẩm sản xuất',
+    other: 'Vật tư phụ trợ',
+    finished_good: 'Thành phẩm',
     semi_finished: 'Bán thành phẩm',
     by_product: 'Phụ phẩm thu hồi',
     byproduct: 'Phụ phẩm thu hồi',
@@ -432,14 +432,15 @@ export async function fetchStockBalances(params: StockBalanceFilterParams): Prom
     const warehouseIds = Array.from(new Set(formatted.map((f) => f.warehouse_id)));
     const { data: txSums } = await supabase
       .from('inventory_transactions')
-      .select('warehouse_id, item_id, quantity')
+      .select('warehouse_id, item_type, item_id, quantity')
       .in('warehouse_id', warehouseIds)
       .in('item_id', itemIds);
 
     if (txSums) {
+      // Map theo (warehouse_id, item_type, item_id) để khớp chính xác với từng dòng balance
       const sumMap = new Map<string, { inbound: number; outbound: number }>();
       for (const tx of txSums) {
-        const key = `${tx.warehouse_id}-${tx.item_id}`;
+        const key = `${tx.warehouse_id}-${tx.item_type}-${tx.item_id}`;
         const entry = sumMap.get(key) || { inbound: 0, outbound: 0 };
         const q = Number(tx.quantity) || 0;
         if (q > 0) entry.inbound += q;
@@ -447,10 +448,11 @@ export async function fetchStockBalances(params: StockBalanceFilterParams): Prom
         sumMap.set(key, entry);
       }
       formatted = formatted.map((b) => {
-        const key = `${b.warehouse_id}-${b.item_id}`;
+        const key = `${b.warehouse_id}-${b.item_type}-${b.item_id}`;
         const s = sumMap.get(key);
+        // Nếu có giao dịch thì lấy chuẩn xác từ giao dịch, nếu chưa có giao dịch thì fallback bảo toàn toán học
         const inQty = s ? s.inbound : (b.current_quantity > 0 ? b.current_quantity : 0);
-        const outQty = s ? s.outbound : 0;
+        const outQty = s ? s.outbound : (b.current_quantity < 0 ? Math.abs(b.current_quantity) : 0);
         return {
           ...b,
           total_inbound: inQty,
@@ -458,6 +460,33 @@ export async function fetchStockBalances(params: StockBalanceFilterParams): Prom
         };
       });
     }
+
+    // Merge/consolidate multiple rows for the same item within the same warehouse (e.g. Bán thành phẩm or different item_types)
+    const consolidatedMap = new Map<string, InventoryStockBalance>();
+    for (const b of formatted) {
+      const itemCodeNorm = b.item_code && b.item_code !== '---' ? b.item_code.trim().toUpperCase() : b.item_id;
+      const key = `${b.warehouse_id}-${itemCodeNorm}`;
+      const existing = consolidatedMap.get(key);
+      if (!existing) {
+        consolidatedMap.set(key, { ...b });
+      } else {
+        existing.current_quantity += b.current_quantity;
+        existing.reserved_quantity += b.reserved_quantity;
+        existing.available_quantity = Math.max(0, existing.current_quantity - existing.reserved_quantity);
+        existing.total_inbound = (existing.total_inbound ?? 0) + (b.total_inbound ?? 0);
+        existing.total_outbound = (existing.total_outbound ?? 0) + (b.total_outbound ?? 0);
+        if (b.last_transaction_at && (!existing.last_transaction_at || b.last_transaction_at > existing.last_transaction_at)) {
+          existing.last_transaction_at = b.last_transaction_at;
+        }
+        // Prefer explicit category if one of them is semi_finished
+        if (b.category === 'semi_finished' || b.category_label?.toLowerCase().includes('bán thành phẩm')) {
+          existing.category = b.category;
+          existing.category_label = b.category_label;
+          existing.item_type = b.item_type;
+        }
+      }
+    }
+    formatted = Array.from(consolidatedMap.values());
   }
 
   const totalCount = count ?? 0;
@@ -488,8 +517,9 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
   // Query transaction quantities to get accurate in/out totals per item & warehouse
   const { data: txList } = await supabase
     .from('inventory_transactions')
-    .select('warehouse_id, item_id, quantity');
+    .select('warehouse_id, item_type, item_id, quantity');
 
+  // Map transaction totals theo warehouse_id + item_id (cộng tất cả loại giao dịch của item trong kho đó)
   const txSumMap = new Map<string, { inbound: number; outbound: number }>();
   if (txList) {
     for (const tx of txList) {
@@ -502,30 +532,42 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
     }
   }
 
-  const itemGroupMap = new Map<string, ItemAggregatedStockBalance>();
+  // Gom nhóm theo từng item_id, bên trong có danh sách các kho duy nhất
+  const itemGroupMap = new Map<string, {
+    item_id: string;
+    item_type: 'material' | 'product' | 'byproduct';
+    item_code: string;
+    item_name: string;
+    category?: string;
+    category_label?: string;
+    unit_of_measure: string;
+    warehousesMap: Map<string, {
+      warehouse_id: string;
+      warehouse_code: string;
+      warehouse_name: string;
+      current_quantity: number;
+      reserved_quantity: number;
+      available_quantity: number;
+      total_inbound: number;
+      total_outbound: number;
+      last_transaction_at?: string;
+    }>;
+  }>();
 
   for (const b of (balances as unknown as StockBalanceQueryResult[]) || []) {
     const itemMeta = itemMap.get(b.item_id);
     const curr = Number(b.current_quantity) || 0;
     const reserved = Number(b.reserved_quantity) || 0;
     const avail = Math.max(0, curr - reserved);
-    const key = `${b.warehouse_id}-${b.item_id}`;
-    const txSum = txSumMap.get(key) || { inbound: curr > 0 ? curr : 0, outbound: 0 };
+    const whId = b.warehouse_id;
 
-    const whDetail = {
-      warehouse_id: b.warehouse_id,
-      warehouse_code: b.warehouses?.code || '',
-      warehouse_name: b.warehouses?.name || '',
-      current_quantity: curr,
-      reserved_quantity: reserved,
-      available_quantity: avail,
-      total_inbound: txSum.inbound,
-      total_outbound: txSum.outbound,
-    };
+    const groupKey = (itemMeta?.code && itemMeta.code !== '---')
+      ? itemMeta.code.trim().toUpperCase()
+      : b.item_id;
 
-    const existing = itemGroupMap.get(b.item_id);
-    if (!existing) {
-      itemGroupMap.set(b.item_id, {
+    let itemEntry = itemGroupMap.get(groupKey);
+    if (!itemEntry) {
+      itemEntry = {
         item_id: b.item_id,
         item_type: b.item_type,
         item_code: itemMeta?.code || '---',
@@ -533,37 +575,102 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
         category: itemMeta?.category,
         category_label: itemMeta?.category_label,
         unit_of_measure: itemMeta?.unit || '',
+        warehousesMap: new Map(),
+      };
+      itemGroupMap.set(groupKey, itemEntry);
+    } else if (itemMeta?.category === 'semi_finished' || itemMeta?.category_label?.toLowerCase().includes('bán thành phẩm')) {
+      // Prioritize semi_finished category if merging entries
+      itemEntry.category = itemMeta.category;
+      itemEntry.category_label = itemMeta.category_label;
+      itemEntry.item_type = b.item_type;
+    }
+
+    // Merge vào kho tương ứng của item đó để tránh trùng lặp kho
+    const existingWh = itemEntry.warehousesMap.get(whId);
+    if (!existingWh) {
+      const key = `${whId}-${b.item_id}`;
+      const txSum = txSumMap.get(key) || {
+        inbound: curr > 0 ? curr : 0,
+        outbound: curr < 0 ? Math.abs(curr) : 0,
+      };
+
+      itemEntry.warehousesMap.set(whId, {
+        warehouse_id: whId,
+        warehouse_code: b.warehouses?.code || '',
+        warehouse_name: b.warehouses?.name || '',
+        current_quantity: curr,
+        reserved_quantity: reserved,
+        available_quantity: avail,
         total_inbound: txSum.inbound,
         total_outbound: txSum.outbound,
-        total_current_quantity: curr,
-        total_reserved_quantity: reserved,
-        total_available_quantity: avail,
-        warehouse_count: 1,
-        warehouses: [whDetail],
+        last_transaction_at: b.last_transaction_at,
       });
     } else {
-      existing.total_inbound += txSum.inbound;
-      existing.total_outbound += txSum.outbound;
-      existing.total_current_quantity += curr;
-      existing.total_reserved_quantity += reserved;
-      existing.total_available_quantity += avail;
-      existing.warehouse_count += 1;
-      existing.warehouses.push(whDetail);
+      // Nếu cùng kho mà có nhiều dòng (ví dụ điều chỉnh phân loại), cộng dồn số dư
+      existingWh.current_quantity += curr;
+      existingWh.reserved_quantity += reserved;
+      existingWh.available_quantity = Math.max(0, existingWh.current_quantity - existingWh.reserved_quantity);
+      if (b.last_transaction_at && (!existingWh.last_transaction_at || b.last_transaction_at > existingWh.last_transaction_at)) {
+        existingWh.last_transaction_at = b.last_transaction_at;
+      }
     }
   }
 
-  return Array.from(itemGroupMap.values()).sort((a, b) => a.item_code.localeCompare(b.item_code));
+  // Chuyển Map thành mảng ItemAggregatedStockBalance với tổng cộng chuẩn xác
+  const result: ItemAggregatedStockBalance[] = [];
+  for (const item of itemGroupMap.values()) {
+    const whList = Array.from(item.warehousesMap.values());
+    const totalInbound = whList.reduce((sum, w) => sum + w.total_inbound, 0);
+    const totalOutbound = whList.reduce((sum, w) => sum + w.total_outbound, 0);
+    const totalCurr = whList.reduce((sum, w) => sum + w.current_quantity, 0);
+    const totalReserved = whList.reduce((sum, w) => sum + w.reserved_quantity, 0);
+    const totalAvail = whList.reduce((sum, w) => sum + w.available_quantity, 0);
+
+    result.push({
+      item_id: item.item_id,
+      item_type: item.item_type,
+      item_code: item.item_code,
+      item_name: item.item_name,
+      category: item.category,
+      category_label: item.category_label,
+      unit_of_measure: item.unit_of_measure,
+      total_inbound: totalInbound,
+      total_outbound: totalOutbound,
+      total_current_quantity: totalCurr,
+      total_reserved_quantity: totalReserved,
+      total_available_quantity: totalAvail,
+      warehouse_count: whList.length,
+      warehouses: whList,
+    });
+  }
+
+  return result.sort((a, b) => a.item_code.localeCompare(b.item_code));
+}
+
+function extractProductionPeriodCode(notes: string | null): string | null {
+  if (!notes) return null;
+  const matches = notes.match(/\[([^\]]+)\]/g);
+  if (!matches) return null;
+  for (const m of matches) {
+    const inner = m.slice(1, -1).trim();
+    if (inner.toLowerCase().includes('nghiệm thu')) continue;
+    return inner;
+  }
+  return null;
 }
 
 /**
  * Fetch paginated inventory transactions
  */
 export async function fetchInventoryTransactions(params: TransactionFilterParams): Promise<PaginatedResult<InventoryTransaction>> {
-  const { search = '', warehouseId, transactionType, itemType, startDate, endDate, page, pageSize } = params;
+  const { search = '', warehouseId, itemId, transactionType, itemType, startDate, endDate, page, pageSize } = params;
   let query = supabase.from('inventory_transactions').select(TRANSACTION_SELECT_COLUMNS, { count: 'exact' });
 
   if (warehouseId && warehouseId !== 'all') {
     query = query.eq('warehouse_id', warehouseId);
+  }
+  if (itemId && itemId !== 'all') {
+    query = query.eq('item_id', itemId);
   }
   if (transactionType && transactionType !== 'all') {
     query = query.eq('transaction_type', transactionType);
@@ -585,10 +692,34 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
 
   if (error) throw new Error(error.message);
 
+  const rawRows = (data as unknown as TransactionQueryResult[]) || [];
+  const shiftDocIds = Array.from(
+    new Set(
+      rawRows
+        .filter((r) => r.reference_doc_type === 'production_shift' && r.reference_doc_id)
+        .map((r) => r.reference_doc_id!)
+    )
+  );
+
+  const shiftCodeMap = new Map<string, string>();
+  if (shiftDocIds.length > 0) {
+    const { data: shifts } = await supabase
+      .from('production_shifts')
+      .select('id, shift_code')
+      .in('id', shiftDocIds);
+    if (shifts) {
+      shifts.forEach((s) => shiftCodeMap.set(s.id, s.shift_code));
+    }
+  }
+
   const itemMap = await getItemMetadataMap();
 
-  let formatted: InventoryTransaction[] = ((data as unknown as TransactionQueryResult[]) || []).map((row) => {
+  let formatted: InventoryTransaction[] = rawRows.map((row) => {
     const itemMeta = itemMap.get(row.item_id);
+    const extractedCode = extractProductionPeriodCode(row.notes);
+    const fallbackShiftCode = row.reference_doc_id ? shiftCodeMap.get(row.reference_doc_id) : null;
+    const periodCode = extractedCode || fallbackShiftCode || null;
+
     return {
       id: row.id,
       transaction_number: row.transaction_number,
@@ -606,6 +737,7 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
       unit_cost: Number(row.unit_cost) || 0,
       reference_doc_type: row.reference_doc_type,
       reference_doc_id: row.reference_doc_id,
+      production_period_code: periodCode,
       notes: row.notes,
       created_by: row.created_by,
       created_by_name: row.profiles?.full_name || null,
@@ -629,6 +761,7 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
     formatted = formatted.filter(
       (t) =>
         t.transaction_number.toLowerCase().includes(term) ||
+        t.production_period_code?.toLowerCase().includes(term) ||
         t.item_code?.toLowerCase().includes(term) ||
         t.item_name?.toLowerCase().includes(term) ||
         t.category_label?.toLowerCase().includes(term) ||
@@ -636,7 +769,10 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
     );
   }
 
-  // Calculate instantaneous running stock balance after each transaction
+  let totalInbound = 0;
+  let totalOutbound = 0;
+
+  // Calculate instantaneous running stock balance after each transaction and overall sums
   if (formatted.length > 0) {
     const itemIds = Array.from(new Set(formatted.map((f) => f.item_id)));
     const warehouseIds = Array.from(new Set(formatted.map((f) => f.warehouse_id)));
@@ -654,9 +790,13 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
       const txBalanceAfterMap = new Map<string, number>();
 
       for (const h of allHistory) {
+        const q = Number(h.quantity) || 0;
+        if (q > 0) totalInbound += q;
+        else if (q < 0) totalOutbound += Math.abs(q);
+
         const pairKey = `${h.warehouse_id}:::${h.item_id}`;
         const prev = runningBalanceMap.get(pairKey) || 0;
-        const current = prev + (Number(h.quantity) || 0);
+        const current = prev + q;
         runningBalanceMap.set(pairKey, current);
         txBalanceAfterMap.set(h.id, current);
       }
@@ -670,7 +810,7 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
 
   const totalCount = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  return { data: formatted, totalCount, page, pageSize, totalPages };
+  return { data: formatted, totalCount, page, pageSize, totalPages, totalInbound, totalOutbound };
 }
 
 /**
@@ -1046,14 +1186,14 @@ export async function fetchItemOptions(): Promise<WarehouseItemOption[]> {
   const items: WarehouseItemOption[] = [];
 
   const CATEGORY_LABELS: Record<string, string> = {
-    raw_material: 'Nguyên vật liệu chính',
+    raw_material: 'Nguyên vật liệu',
     chemical: 'Hóa chất công nghiệp',
-    spare_part: 'Phụ tùng & Linh kiện cơ điện',
-    packaging: 'Vật tư bao bì & Đóng gói',
-    consumable: 'Vật tư tiêu hao / BHLĐ',
+    spare_part: 'Phụ tùng cơ điện',
+    packaging: 'Bao bì & Đóng gói',
+    consumable: 'Tiêu hao / BHLĐ',
     fuel_energy: 'Nhiên liệu & Năng lượng',
-    other: 'Vật tư phụ trợ khác',
-    finished_good: 'Thành phẩm sản xuất',
+    other: 'Vật tư phụ trợ',
+    finished_good: 'Thành phẩm',
     semi_finished: 'Bán thành phẩm',
     by_product: 'Phụ phẩm thu hồi',
     byproduct: 'Phụ phẩm thu hồi',

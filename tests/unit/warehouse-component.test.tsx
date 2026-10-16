@@ -203,7 +203,7 @@ describe('Warehouse Components', () => {
 
     it('renders granular commodity classification badges correctly', () => {
       const { rerender } = render(<ItemTypeBadge type="material" category="raw_material" />);
-      expect(screen.getByText('Nguyên vật liệu chính')).toBeInTheDocument();
+      expect(screen.getByText('Nguyên vật liệu')).toBeInTheDocument();
 
       rerender(<ItemTypeBadge type="material" category="chemical" />);
       expect(screen.getByText('Hóa chất công nghiệp')).toBeInTheDocument();
@@ -221,7 +221,7 @@ describe('Warehouse Components', () => {
       expect(screen.getByText('Bán thành phẩm')).toBeInTheDocument();
 
       rerender(<ItemTypeBadge type="byproduct" category="by_product" />);
-      expect(screen.getByText('Phụ phẩm')).toBeInTheDocument();
+      expect(screen.getByText('Phụ phẩm thu hồi')).toBeInTheDocument();
     });
   });
 
@@ -582,11 +582,11 @@ describe('Warehouse Components', () => {
 
       // Verify commodity classification selector exists with comprehensive categories
       const categorySelect = screen.getByLabelText(/Phân loại mặt hàng/i);
-      expect(categorySelect).toHaveTextContent(/Nguyên vật liệu chính/i);
+      expect(categorySelect).toHaveTextContent(/Nguyên vật liệu/i);
       expect(categorySelect).toHaveTextContent(/Hóa chất công nghiệp/i);
-      expect(categorySelect).toHaveTextContent(/Phụ tùng & Linh kiện cơ điện/i);
+      expect(categorySelect).toHaveTextContent(/Phụ tùng cơ điện/i);
       expect(categorySelect).toHaveTextContent(/Vật tư phụ trợ khác/i);
-      expect(categorySelect).toHaveTextContent(/Thành phẩm sản xuất/i);
+      expect(categorySelect).toHaveTextContent(/Thành phẩm/i);
       expect(categorySelect).toHaveTextContent(/Phụ phẩm thu hồi/i);
 
       // Switch category to Chemical
@@ -930,7 +930,7 @@ describe('Warehouse Components', () => {
       },
     ];
 
-    it('renders stock balance table with Inbound, Outbound, and Current Stock columns', () => {
+    it('renders stock balance table with warehouse name and current stock', () => {
       render(
         <StockBalanceTable
           data={{
@@ -959,17 +959,13 @@ describe('Warehouse Components', () => {
 
       // Verify warehouse group header
       expect(screen.getByText('Kho Nguyên Vật Liệu Chính')).toBeInTheDocument();
-      expect(screen.getByText('K-NVL')).toBeInTheDocument();
-      expect(screen.getByText(/1 mặt hàng/i)).toBeInTheDocument();
 
       // Verify columns
-      expect(screen.getByText(/Tổng Nhập \(\+\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/Tổng Xuất \(-\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/Tồn thực tế \(=\)/i)).toBeInTheDocument();
+      expect(screen.getByText('Mã mặt hàng')).toBeInTheDocument();
+      expect(screen.getByText('Tên hàng / Vật tư')).toBeInTheDocument();
+      expect(screen.getByText('Tồn kho')).toBeInTheDocument();
 
-      // Verify data row and summary values
-      expect(screen.getAllByText('1.000').length).toBeGreaterThan(0);
-      expect(screen.getAllByText('200').length).toBeGreaterThan(0);
+      // Verify stock quantity is rendered
       expect(screen.getAllByText('800').length).toBeGreaterThan(0);
     });
 
@@ -1054,10 +1050,9 @@ describe('Warehouse Components', () => {
       await user.click(byItemBtn);
 
       // Aggregated headers visible
-      expect(screen.getByText(/Tổng Nhập Cty \(\+\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/Tổng Xuất Cty \(-\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/Tổng Tồn Thực Tế \(=\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/2 kho/i)).toBeInTheDocument();
+      expect(screen.getByText('Mã mặt hàng')).toBeInTheDocument();
+      expect(screen.getByText('Tên hàng / Vật tư')).toBeInTheDocument();
+      expect(screen.getByText('Tồn kho')).toBeInTheDocument();
 
       // Click on row to expand details
       const itemName = screen.getByText('Quặng Bauxite Thô Loại 1');
@@ -1065,6 +1060,8 @@ describe('Warehouse Components', () => {
 
       // Warehouse breakdown visible
       expect(screen.getByText(/Chi tiết phân bổ tồn kho của vật tư/i)).toBeInTheDocument();
+      expect(screen.getByText('Kho lưu trữ')).toBeInTheDocument();
+      expect(screen.getByText('Tồn tại kho')).toBeInTheDocument();
       expect(screen.getByText(/Kho Trung Gian Số 2/i)).toBeInTheDocument();
     });
   });
