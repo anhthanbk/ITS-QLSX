@@ -10,6 +10,7 @@ import { HRPage } from '@/features/hr';
 import { MaintenancePage } from '@/features/maintenance';
 import { WarehousePage } from '@/features/warehouse';
 import { ProductionPage } from '@/features/production';
+import { SalesPage } from '@/features/sales';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageContainer } from '@/components/layout/page-container';
 
@@ -275,81 +276,17 @@ export const AppRoutes: React.FC = () => {
           />
 
           {/* 7. Kinh Doanh - Mua Sắm */}
+          <Route path="/sales" element={<SalesPage />} />
+          <Route path="/sales/orders" element={<SalesPage />} />
+          <Route path="/sales/customers" element={<SalesPage />} />
+          <Route path="/sales/suppliers" element={<SalesPage />} />
           <Route
-            path="/sales"
-            element={
-              <PageContainer
-                title="Kinh Doanh & Mua Sắm"
-                description="Quản lý đơn hàng thương mại và chuỗi cung ứng vật tư"
-              >
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                  <p className="text-sm text-muted-foreground">
-                    Module Kinh doanh & Mua sắm sẽ được phát triển trong giai đoạn tiếp theo.
-                  </p>
-                </div>
-              </PageContainer>
-            }
+            path="/procurement"
+            element={<Navigate to="/procurement/orders" replace />}
           />
-          <Route
-            path="/sales/orders"
-            element={
-              <PageContainer
-                title="Đơn hàng & hợp đồng bán buôn"
-                description="Theo dõi hợp đồng cung ứng, đơn đặt hàng và tiến độ giao nhận thành phẩm"
-              >
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                  <p className="text-sm text-muted-foreground">
-                    Module Đơn hàng & Hợp đồng đang được xây dựng.
-                  </p>
-                </div>
-              </PageContainer>
-            }
-          />
-          <Route
-            path="/sales/customers"
-            element={
-              <PageContainer
-                title="Khách hàng & đối tác"
-                description="Danh bạ khách hàng, hạn mức tín dụng và lịch sử giao dịch thương mại"
-              >
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                  <p className="text-sm text-muted-foreground">
-                    Module Khách hàng & Đối tác đang được xây dựng.
-                  </p>
-                </div>
-              </PageContainer>
-            }
-          />
-          <Route
-            path="/procurement/requests"
-            element={
-              <PageContainer
-                title="Đề xuất mua sắm vật tư (PR)"
-                description="Lập phiếu đề xuất mua vật tư thay thế, hóa chất và nguyên liệu xưởng"
-              >
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                  <p className="text-sm text-muted-foreground">
-                    Module Đề xuất mua sắm PR đang được xây dựng.
-                  </p>
-                </div>
-              </PageContainer>
-            }
-          />
-          <Route
-            path="/procurement/orders"
-            element={
-              <PageContainer
-                title="Đơn đặt hàng nhà cung ứng (PO)"
-                description="Theo dõi đơn hàng gửi nhà cung cấp, tiến độ hàng về và đối soát chứng từ"
-              >
-                <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-                  <p className="text-sm text-muted-foreground">
-                    Module Đơn đặt hàng PO đang được xây dựng.
-                  </p>
-                </div>
-              </PageContainer>
-            }
-          />
+          <Route path="/procurement/orders" element={<SalesPage />} />
+          <Route path="/procurement/requests" element={<SalesPage />} />
+          <Route path="/procurement/suppliers" element={<SalesPage />} />
 
           {/* 8. Tài Chính - Kế Toán (TCKT) */}
           <Route

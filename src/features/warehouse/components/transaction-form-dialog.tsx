@@ -18,14 +18,26 @@ interface TransactionFormDialogProps {
 function getFilteredItems(items: WarehouseItemOption[], category: string): WarehouseItemOption[] {
   if (category === 'all') return items;
   if (category === 'material') return items.filter((i) => i.item_type === 'material');
-  if (category === 'semi_finished') return items.filter((i) => i.category === 'semi_finished');
-  if (category === 'product' || category === 'finished_good') {
+  if (category === 'product') {
+    return items.filter((i) => i.item_type === 'product' || i.item_type === 'byproduct');
+  }
+  if (category === 'finished_good') {
     return items.filter(
-      (i) => i.category === 'finished_good' || (i.item_type === 'product' && i.category !== 'semi_finished' && i.category !== 'by_product'),
+      (i) =>
+        i.category === 'finished_good' ||
+        (i.item_type === 'product' &&
+          i.category !== 'semi_finished' &&
+          i.category !== 'by_product' &&
+          i.category !== 'byproduct'),
     );
   }
+  if (category === 'semi_finished') {
+    return items.filter((i) => i.category === 'semi_finished');
+  }
   if (category === 'byproduct' || category === 'by_product') {
-    return items.filter((i) => i.category === 'by_product' || i.category === 'byproduct' || i.item_type === 'byproduct');
+    return items.filter(
+      (i) => i.category === 'by_product' || i.category === 'byproduct' || i.item_type === 'byproduct',
+    );
   }
   return items.filter((i) => i.category === category);
 }
@@ -64,6 +76,57 @@ export const TransactionFormDialog: React.FC<TransactionFormDialogProps> = ({
   const selectedItemId = watch('item_id');
   const selectedTxType = watch('transaction_type');
   const selectedWarehouseId = watch('warehouse_id');
+
+  // Dynamic item count by classification group matching material catalog
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: itemOptions.length,
+      raw_material: 0,
+      chemical: 0,
+      spare_part: 0,
+      packaging: 0,
+      consumable: 0,
+      fuel_energy: 0,
+      other: 0,
+      finished_good: 0,
+      semi_finished: 0,
+      by_product: 0,
+      material: 0,
+      product: 0,
+    };
+
+    itemOptions.forEach((item) => {
+      if (item.item_type === 'material') {
+        counts.material = (counts.material || 0) + 1;
+      } else {
+        counts.product = (counts.product || 0) + 1;
+      }
+
+      if (
+        item.category === 'finished_good' ||
+        (item.item_type === 'product' &&
+          item.category !== 'semi_finished' &&
+          item.category !== 'by_product' &&
+          item.category !== 'byproduct')
+      ) {
+        counts.finished_good = (counts.finished_good || 0) + 1;
+      } else if (
+        item.category === 'by_product' ||
+        item.category === 'byproduct' ||
+        item.item_type === 'byproduct'
+      ) {
+        counts.by_product = (counts.by_product || 0) + 1;
+      } else if (item.category === 'semi_finished') {
+        counts.semi_finished = (counts.semi_finished || 0) + 1;
+      } else if (item.category && item.category in counts) {
+        counts[item.category] = (counts[item.category] || 0) + 1;
+      } else if (item.category) {
+        counts.other = (counts.other || 0) + 1;
+      }
+    });
+
+    return counts;
+  }, [itemOptions]);
 
   // Filter items by selected granular category or broad type
   const filteredItems = useMemo(
@@ -239,25 +302,23 @@ export const TransactionFormDialog: React.FC<TransactionFormDialogProps> = ({
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary font-medium"
               >
                 <option value="all">-- Tất cả chủng loại mặt hàng ({itemOptions.length}) --</option>
-                <optgroup label="📦 Nhóm Vật tư & Phụ tùng (Materials & Parts)">
-                  <option value="raw_material">Nguyên vật liệu chính (Bauxite, Đá vôi, Quặng...)</option>
-                  <option value="chemical">Hóa chất công nghiệp (Xút NaOH, Vôi sống, Axit...)</option>
-                  <option value="spare_part">Phụ tùng & Linh kiện cơ điện (Vòng bi, Động cơ, Bơm...)</option>
-                  <option value="packaging">Vật tư bao bì & Đóng gói (Bao Jumbo, Thùng, Màng PE...)</option>
-                  <option value="consumable">Vật tư tiêu hao / BHLĐ (Găng tay, Khẩu trang, Que hàn...)</option>
-                  <option value="fuel_energy">Nhiên liệu & Năng lượng (Than cám, Dầu DO, Gas...)</option>
-                  <option value="other">Vật tư phụ trợ khác</option>
+                <optgroup label="📦 Danh mục Vật tư & NVL">
+                  <option value="raw_material">Nguyên vật liệu ({categoryCounts.raw_material || 0})</option>
+                  <option value="chemical">Hóa chất công nghiệp ({categoryCounts.chemical || 0})</option>
+                  <option value="spare_part">Phụ tùng cơ điện ({categoryCounts.spare_part || 0})</option>
+                  <option value="packaging">Bao bì & Đóng gói ({categoryCounts.packaging || 0})</option>
+                  <option value="consumable">Tiêu hao / BHLĐ ({categoryCounts.consumable || 0})</option>
+                  <option value="fuel_energy">Nhiên liệu & Năng lượng ({categoryCounts.fuel_energy || 0})</option>
+                  <option value="other">Vật tư phụ trợ khác ({categoryCounts.other || 0})</option>
                 </optgroup>
-                <optgroup label="🏭 Nhóm Sản xuất & Phụ phẩm (Production Output)">
-                  <option value="finished_good">Thành phẩm sản xuất (Alumina cát mịn...)</option>
-                  <option value="semi_finished">Bán thành phẩm (Nhôm Hydroxit Al(OH)3...)</option>
-                  <option value="by_product">Phụ phẩm thu hồi (Bùn đỏ lắng, Xỉ quặng...)</option>
+                <optgroup label="🏭 Danh mục Sản phẩm & Phụ phẩm">
+                  <option value="finished_good">Thành phẩm ({categoryCounts.finished_good || 0})</option>
+                  <option value="semi_finished">Bán thành phẩm ({categoryCounts.semi_finished || 0})</option>
+                  <option value="by_product">Phụ phẩm thu hồi ({categoryCounts.by_product || 0})</option>
                 </optgroup>
-                <optgroup label="🗂️ Phân loại tổng hợp (General Categories)">
-                  <option value="material">Toàn bộ vật tư & phụ tùng (materials)</option>
-                  <option value="product">Toàn bộ thành phẩm (finished goods)</option>
-                  <option value="semi_finished">Toàn bộ bán thành phẩm (semi-finished goods)</option>
-                  <option value="byproduct">Toàn bộ phụ phẩm thu hồi (byproducts)</option>
+                <optgroup label="🗂️ Phân loại tổng hợp">
+                  <option value="material">Toàn bộ vật tư & NVL ({categoryCounts.material || 0})</option>
+                  <option value="product">Toàn bộ thành phẩm & phụ phẩm ({categoryCounts.product || 0})</option>
                 </optgroup>
               </select>
             </div>

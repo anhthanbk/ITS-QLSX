@@ -169,8 +169,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               className="rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="all">Tất cả phân loại</option>
-              <optgroup label="📦 Vật tư & Phụ tùng">
-                <option value="raw_material">Nguyên vật liệu chính</option>
+              <optgroup label="📦 Danh mục Vật tư & NVL">
+                <option value="raw_material">Nguyên vật liệu</option>
                 <option value="chemical">Hóa chất công nghiệp</option>
                 <option value="spare_part">Phụ tùng cơ điện</option>
                 <option value="packaging">Bao bì & Đóng gói</option>
@@ -178,15 +178,14 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                 <option value="fuel_energy">Nhiên liệu & Năng lượng</option>
                 <option value="other">Vật tư phụ trợ</option>
               </optgroup>
-              <optgroup label="🏭 Sản xuất & Phụ phẩm">
-                <option value="finished_good">Thành phẩm sản xuất</option>
+              <optgroup label="🏭 Sản phẩm & Phụ phẩm">
+                <option value="finished_good">Thành phẩm</option>
                 <option value="semi_finished">Bán thành phẩm</option>
                 <option value="by_product">Phụ phẩm thu hồi</option>
               </optgroup>
               <optgroup label="🗂️ Nhóm tổng quát">
                 <option value="material">Tất cả vật tư & phụ tùng</option>
-                <option value="product">Tất cả thành phẩm</option>
-                <option value="byproduct">Tất cả phụ phẩm</option>
+                <option value="product">Tất cả thành phẩm & phụ phẩm</option>
               </optgroup>
             </select>
           </div>

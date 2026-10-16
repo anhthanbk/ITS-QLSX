@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   Search,
   Filter,
-  RotateCcw,
   Sliders,
   ChevronLeft,
   ChevronRight,
@@ -11,13 +10,11 @@ import {
   Layers,
   Building2,
   Boxes,
-  ArrowDownLeft,
-  ArrowUpRight,
   History,
+  RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { InventoryStockBalance, Warehouse } from '@/features/warehouse/types';
-import { ItemTypeBadge, WarehouseTypeBadge } from './warehouse-badges';
 import { useItemAggregatedStockBalances } from '../hooks/use-stock-balances';
 import { StockHistoryModal, type StockHistoryTargetItem } from './stock-history-modal';
 
@@ -341,8 +338,8 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
             className="rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           >
             <option value="all">Tất cả phân loại</option>
-            <optgroup label="📦 Vật tư & Phụ tùng">
-              <option value="raw_material">Nguyên vật liệu chính</option>
+            <optgroup label="📦 Danh mục Vật tư & NVL">
+              <option value="raw_material">Nguyên vật liệu</option>
               <option value="chemical">Hóa chất công nghiệp</option>
               <option value="spare_part">Phụ tùng cơ điện</option>
               <option value="packaging">Bao bì & Đóng gói</option>
@@ -350,16 +347,14 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
               <option value="fuel_energy">Nhiên liệu & Năng lượng</option>
               <option value="other">Vật tư phụ trợ</option>
             </optgroup>
-            <optgroup label="🏭 Sản xuất & Phụ phẩm">
-              <option value="finished_good">Thành phẩm sản xuất</option>
+            <optgroup label="🏭 Sản phẩm & Phụ phẩm">
+              <option value="finished_good">Thành phẩm</option>
               <option value="semi_finished">Bán thành phẩm</option>
               <option value="by_product">Phụ phẩm thu hồi</option>
             </optgroup>
             <optgroup label="🗂️ Nhóm tổng quát">
               <option value="material">Tất cả vật tư & phụ tùng</option>
-              <option value="product">Tất cả thành phẩm chính</option>
-              <option value="semi_finished">Tất cả bán thành phẩm</option>
-              <option value="byproduct">Tất cả phụ phẩm</option>
+              <option value="product">Tất cả thành phẩm & phụ phẩm</option>
             </optgroup>
           </select>
 
@@ -464,7 +459,7 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                         }}
                         className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none bg-card hover:bg-accent/30 transition-colors"
                       >
-                        {/* Left: Chevron + Warehouse Name + Code + Badge + Count */}
+                        {/* Left: Chevron + Warehouse Name */}
                         <div className="flex items-center gap-3">
                           <div
                             className={`flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background transition-transform duration-200 ${
@@ -474,44 +469,19 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                             <ChevronDown className="h-4 w-4" />
                           </div>
 
-                          <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
                             <Building2 className="h-4 w-4 text-primary shrink-0" />
                             <span className="text-sm font-bold text-foreground">{group.warehouseName}</span>
-                            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border/50">
-                              {group.warehouseCode}
-                            </span>
-                            {group.warehouseType && (
-                              <WarehouseTypeBadge type={group.warehouseType} />
-                            )}
-                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-[11px] font-semibold">
-                              <Boxes className="h-3 w-3" />
-                              {group.items.length} mặt hàng
-                            </span>
                           </div>
                         </div>
 
-                        {/* Right: Aggregated Totals in Header */}
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
-                          <div className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-400 font-medium">
-                            <ArrowDownLeft className="h-3 w-3" />
-                            <span>Nhập:</span>
-                            <span className="font-bold">{group.totalInbound.toLocaleString('vi-VN')}</span>
-                          </div>
-
-                          <div className="flex items-center gap-1 rounded-lg bg-rose-500/10 px-2.5 py-1 text-rose-700 dark:text-rose-400 font-medium">
-                            <ArrowUpRight className="h-3 w-3" />
-                            <span>Xuất:</span>
-                            <span className="font-bold">{group.totalOutbound.toLocaleString('vi-VN')}</span>
-                          </div>
-
-                          <div className="flex items-center gap-1 rounded-lg bg-muted px-2.5 py-1 text-foreground font-semibold">
+                        {/* Right: Tồn kho in Header */}
+                        <div className="flex items-center gap-2 text-xs">
+                          <div className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-1.5 text-foreground font-semibold">
                             <span className="text-muted-foreground">Tồn:</span>
-                            <span className="font-bold text-primary">{group.totalCurrentQuantity.toLocaleString('vi-VN')}</span>
-                          </div>
-
-                          <div className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-400 font-semibold">
-                            <span className="text-emerald-700/80 dark:text-emerald-400/80">Khả dụng:</span>
-                            <span>{group.totalAvailableQuantity.toLocaleString('vi-VN')}</span>
+                            <span className={`font-bold ${group.totalCurrentQuantity < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-primary'}`}>
+                              {group.totalCurrentQuantity.toLocaleString('vi-VN')}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -528,25 +498,9 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                               <table className="w-full text-left border-collapse text-xs">
                                 <thead>
                                   <tr className="border-b border-border bg-muted/40 font-semibold text-muted-foreground">
-                                    <th className="py-2.5 px-4">Phân loại</th>
                                     <th className="py-2.5 px-4">Mã mặt hàng</th>
                                     <th className="py-2.5 px-4">Tên hàng / Vật tư</th>
-                                    <th className="py-2.5 px-4 text-right text-emerald-700 dark:text-emerald-400">
-                                      <span className="flex items-center justify-end gap-1">
-                                        <ArrowDownLeft className="h-3 w-3" />
-                                        Tổng Nhập (+)
-                                      </span>
-                                    </th>
-                                    <th className="py-2.5 px-4 text-right text-rose-700 dark:text-rose-400">
-                                      <span className="flex items-center justify-end gap-1">
-                                        <ArrowUpRight className="h-3 w-3" />
-                                        Tổng Xuất (-)
-                                      </span>
-                                    </th>
-                                    <th className="py-2.5 px-4 text-right font-bold text-foreground">Tồn thực tế (=)</th>
-                                    <th className="py-2.5 px-4 text-right">Khả dụng</th>
-                                    <th className="py-2.5 px-4">Đơn vị</th>
-                                    <th className="py-2.5 px-4">Cập nhật cuối</th>
+                                    <th className="py-2.5 px-4 text-right font-bold text-foreground">Tồn kho</th>
                                     <th className="py-2.5 px-4 text-right">Thao tác</th>
                                   </tr>
                                 </thead>
@@ -571,13 +525,6 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                       className="hover:bg-accent/40 cursor-pointer transition-colors"
                                       title="Nhấp để xem chi tiết lịch sử nhập xuất kho"
                                     >
-                                      <td className="py-3 px-4 whitespace-nowrap">
-                                        <ItemTypeBadge
-                                          type={item.item_type}
-                                          category={item.category}
-                                          categoryLabel={item.category_label}
-                                        />
-                                      </td>
                                       <td className="py-3 px-4 font-mono font-bold whitespace-nowrap text-foreground">
                                         {item.item_code}
                                       </td>
@@ -586,25 +533,13 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                           {item.item_name}
                                         </span>
                                       </td>
-                                      <td className="py-3 px-4 text-right font-medium text-emerald-600 dark:text-emerald-400">
-                                        {(item.total_inbound ?? 0).toLocaleString('vi-VN')}
-                                      </td>
-                                      <td className="py-3 px-4 text-right font-medium text-rose-600 dark:text-rose-400">
-                                        {(item.total_outbound ?? 0).toLocaleString('vi-VN')}
-                                      </td>
-                                      <td className={`py-3 px-4 text-right font-bold bg-muted/20 ${item.current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : item.current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
+                                      <td className={`py-3 px-4 text-right font-bold ${item.current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : item.current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
                                         {item.current_quantity.toLocaleString('vi-VN')}
-                                      </td>
-                                      <td className="py-3 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                        {item.available_quantity.toLocaleString('vi-VN')}
-                                      </td>
-                                      <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                                        {item.unit_of_measure}
-                                      </td>
-                                      <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                                        {item.last_transaction_at
-                                          ? new Date(item.last_transaction_at).toLocaleDateString('vi-VN')
-                                          : '—'}
+                                        {item.unit_of_measure && (
+                                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                            {item.unit_of_measure}
+                                          </span>
+                                        )}
                                       </td>
                                       <td className="py-3 px-4 text-right whitespace-nowrap">
                                         <div
@@ -737,25 +672,9 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                     <thead>
                       <tr className="border-b border-border bg-muted/40 font-semibold text-muted-foreground">
                         <th className="py-3 px-3 w-10 text-center"></th>
-                        <th className="py-3 px-4">Phân loại</th>
                         <th className="py-3 px-4">Mã mặt hàng</th>
                         <th className="py-3 px-4">Tên hàng / Vật tư</th>
-                        <th className="py-3 px-4 text-right text-emerald-700 dark:text-emerald-400">
-                          <span className="flex items-center justify-end gap-1">
-                            <ArrowDownLeft className="h-3 w-3" />
-                            Tổng Nhập Cty (+)
-                          </span>
-                        </th>
-                        <th className="py-3 px-4 text-right text-rose-700 dark:text-rose-400">
-                          <span className="flex items-center justify-end gap-1">
-                            <ArrowUpRight className="h-3 w-3" />
-                            Tổng Xuất Cty (-)
-                          </span>
-                        </th>
-                        <th className="py-3 px-4 text-right font-bold text-foreground">Tổng Tồn Thực Tế (=)</th>
-                        <th className="py-3 px-4 text-right">Tổng Khả Dụng</th>
-                        <th className="py-3 px-4">Đơn vị</th>
-                        <th className="py-3 px-4 text-center">Phân bổ kho</th>
+                        <th className="py-3 px-4 text-right font-bold text-foreground">Tồn kho</th>
                         <th className="py-3 px-4 text-right">Thao tác</th>
                       </tr>
                     </thead>
@@ -787,33 +706,15 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                   />
                                 </Button>
                               </td>
-                              <td className="py-3.5 px-4 whitespace-nowrap">
-                                <ItemTypeBadge
-                                  type={item.item_type}
-                                  category={item.category}
-                                  categoryLabel={item.category_label}
-                                />
-                              </td>
                               <td className="py-3.5 px-4 font-mono font-bold whitespace-nowrap">{item.item_code}</td>
                               <td className="py-3.5 px-4 font-medium text-foreground">{item.item_name}</td>
-                              <td className="py-3.5 px-4 text-right font-medium text-emerald-600 dark:text-emerald-400">
-                                {item.total_inbound.toLocaleString('vi-VN')}
-                              </td>
-                              <td className="py-3.5 px-4 text-right font-medium text-rose-600 dark:text-rose-400">
-                                {item.total_outbound.toLocaleString('vi-VN')}
-                              </td>
-                              <td className={`py-3.5 px-4 text-right font-bold bg-muted/20 ${item.total_current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : item.total_current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
+                              <td className={`py-3.5 px-4 text-right font-bold ${item.total_current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : item.total_current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
                                 {item.total_current_quantity.toLocaleString('vi-VN')}
-                              </td>
-                              <td className="py-3.5 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                {item.total_available_quantity.toLocaleString('vi-VN')}
-                              </td>
-                              <td className="py-3.5 px-4 text-muted-foreground whitespace-nowrap">{item.unit_of_measure}</td>
-                              <td className="py-3.5 px-4 text-center">
-                                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-semibold text-foreground">
-                                  <Building2 className="h-3 w-3 text-muted-foreground" />
-                                  {item.warehouses.length} kho
-                                </span>
+                                {item.unit_of_measure && (
+                                  <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                    {item.unit_of_measure}
+                                  </span>
+                                )}
                               </td>
                               <td className="py-3.5 px-4 text-right">
                                 <Button
@@ -843,27 +744,20 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                             {/* Sub-row: Chi tiết số dư theo từng kho */}
                             {isExpanded && (
                               <tr className="bg-muted/15">
-                                <td colSpan={11} className="p-0">
+                                <td colSpan={5} className="p-0">
                                   <div className="border-t border-border/80 p-4 pl-12">
                                     <div className="mb-2 flex items-center justify-between">
                                       <h4 className="text-[12px] font-semibold text-foreground flex items-center gap-1.5">
                                         <Building2 className="h-3.5 w-3.5 text-primary" />
                                         Chi tiết phân bổ tồn kho của vật tư: {item.item_name} ({item.item_code})
                                       </h4>
-                                      <span className="text-[11px] text-muted-foreground">
-                                        Tổng tồn = Tổng nhập - Tổng xuất theo từng kho
-                                      </span>
                                     </div>
                                     <div className="overflow-hidden rounded-lg border border-border bg-background shadow-xs">
                                       <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                           <tr className="border-b border-border bg-muted/30 font-medium text-muted-foreground text-[11px]">
                                             <th className="py-2.5 px-3">Kho lưu trữ</th>
-                                            <th className="py-2.5 px-3 text-right text-emerald-700 dark:text-emerald-400">Tổng Nhập (+)</th>
-                                            <th className="py-2.5 px-3 text-right text-rose-700 dark:text-rose-400">Tổng Xuất (-)</th>
-                                            <th className="py-2.5 px-3 text-right font-bold text-foreground">Tồn tại kho (=)</th>
-                                            <th className="py-2.5 px-3 text-right">Khả dụng</th>
-                                            <th className="py-2.5 px-3">Cập nhật cuối</th>
+                                            <th className="py-2.5 px-3 text-right font-bold text-foreground">Tồn tại kho</th>
                                             <th className="py-2.5 px-3 text-right">Thao tác</th>
                                           </tr>
                                         </thead>
@@ -876,22 +770,13 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                                   ({wh.warehouse_code})
                                                 </span>
                                               </td>
-                                              <td className="py-2.5 px-3 text-right text-emerald-600 dark:text-emerald-400 font-medium">
-                                                {(wh.total_inbound ?? 0).toLocaleString('vi-VN')}
-                                              </td>
-                                              <td className="py-2.5 px-3 text-right text-rose-600 dark:text-rose-400 font-medium">
-                                                {(wh.total_outbound ?? 0).toLocaleString('vi-VN')}
-                                              </td>
                                               <td className={`py-2.5 px-3 text-right font-bold ${wh.current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : wh.current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
                                                 {wh.current_quantity.toLocaleString('vi-VN')}
-                                              </td>
-                                              <td className="py-2.5 px-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                {wh.available_quantity.toLocaleString('vi-VN')}
-                                              </td>
-                                              <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap text-[11px]">
-                                                {wh.last_transaction_at
-                                                  ? new Date(wh.last_transaction_at).toLocaleDateString('vi-VN')
-                                                  : 'Chưa giao dịch'}
+                                                {item.unit_of_measure && (
+                                                  <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                                    {item.unit_of_measure}
+                                                  </span>
+                                                )}
                                               </td>
                                               <td className="py-2.5 px-3 text-right whitespace-nowrap">
                                                 <div className="flex items-center justify-end gap-1">

@@ -155,7 +155,7 @@ export const ItemTypeBadge: React.FC<ItemTypeBadgeProps> = ({ type, category, ca
       case 'raw_material':
         return (
           <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400 border border-amber-500/20">
-            Nguyên vật liệu chính
+            Nguyên vật liệu
           </span>
         );
       case 'chemical':
@@ -173,13 +173,13 @@ export const ItemTypeBadge: React.FC<ItemTypeBadgeProps> = ({ type, category, ca
       case 'packaging':
         return (
           <span className="inline-flex items-center gap-1 rounded bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-medium text-cyan-700 dark:text-cyan-400 border border-cyan-500/20">
-            Vật tư bao bì
+            Bao bì & Đóng gói
           </span>
         );
       case 'consumable':
         return (
           <span className="inline-flex items-center gap-1 rounded bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-400 border border-orange-500/20">
-            Vật tư tiêu hao / BHLĐ
+            Tiêu hao / BHLĐ
           </span>
         );
       case 'fuel_energy':
@@ -210,7 +210,7 @@ export const ItemTypeBadge: React.FC<ItemTypeBadgeProps> = ({ type, category, ca
       case 'byproduct':
         return (
           <span className="inline-flex items-center gap-1 rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-700 dark:text-rose-400 border border-rose-500/20">
-            Phụ phẩm
+            Phụ phẩm thu hồi
           </span>
         );
       default:

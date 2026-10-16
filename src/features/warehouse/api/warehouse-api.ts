@@ -281,14 +281,14 @@ async function getItemMetadataMap() {
   >();
 
   const CATEGORY_LABELS: Record<string, string> = {
-    raw_material: 'Nguyên vật liệu chính',
+    raw_material: 'Nguyên vật liệu',
     chemical: 'Hóa chất công nghiệp',
-    spare_part: 'Phụ tùng & Linh kiện cơ điện',
-    packaging: 'Vật tư bao bì & Đóng gói',
-    consumable: 'Vật tư tiêu hao / BHLĐ',
+    spare_part: 'Phụ tùng cơ điện',
+    packaging: 'Bao bì & Đóng gói',
+    consumable: 'Tiêu hao / BHLĐ',
     fuel_energy: 'Nhiên liệu & Năng lượng',
-    other: 'Vật tư phụ trợ khác',
-    finished_good: 'Thành phẩm sản xuất',
+    other: 'Vật tư phụ trợ',
+    finished_good: 'Thành phẩm',
     semi_finished: 'Bán thành phẩm',
     by_product: 'Phụ phẩm thu hồi',
     byproduct: 'Phụ phẩm thu hồi',
@@ -647,6 +647,18 @@ export async function fetchItemAggregatedStockBalances(): Promise<ItemAggregated
   return result.sort((a, b) => a.item_code.localeCompare(b.item_code));
 }
 
+function extractProductionPeriodCode(notes: string | null): string | null {
+  if (!notes) return null;
+  const matches = notes.match(/\[([^\]]+)\]/g);
+  if (!matches) return null;
+  for (const m of matches) {
+    const inner = m.slice(1, -1).trim();
+    if (inner.toLowerCase().includes('nghiệm thu')) continue;
+    return inner;
+  }
+  return null;
+}
+
 /**
  * Fetch paginated inventory transactions
  */
@@ -680,10 +692,34 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
 
   if (error) throw new Error(error.message);
 
+  const rawRows = (data as unknown as TransactionQueryResult[]) || [];
+  const shiftDocIds = Array.from(
+    new Set(
+      rawRows
+        .filter((r) => r.reference_doc_type === 'production_shift' && r.reference_doc_id)
+        .map((r) => r.reference_doc_id!)
+    )
+  );
+
+  const shiftCodeMap = new Map<string, string>();
+  if (shiftDocIds.length > 0) {
+    const { data: shifts } = await supabase
+      .from('production_shifts')
+      .select('id, shift_code')
+      .in('id', shiftDocIds);
+    if (shifts) {
+      shifts.forEach((s) => shiftCodeMap.set(s.id, s.shift_code));
+    }
+  }
+
   const itemMap = await getItemMetadataMap();
 
-  let formatted: InventoryTransaction[] = ((data as unknown as TransactionQueryResult[]) || []).map((row) => {
+  let formatted: InventoryTransaction[] = rawRows.map((row) => {
     const itemMeta = itemMap.get(row.item_id);
+    const extractedCode = extractProductionPeriodCode(row.notes);
+    const fallbackShiftCode = row.reference_doc_id ? shiftCodeMap.get(row.reference_doc_id) : null;
+    const periodCode = extractedCode || fallbackShiftCode || null;
+
     return {
       id: row.id,
       transaction_number: row.transaction_number,
@@ -701,6 +737,7 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
       unit_cost: Number(row.unit_cost) || 0,
       reference_doc_type: row.reference_doc_type,
       reference_doc_id: row.reference_doc_id,
+      production_period_code: periodCode,
       notes: row.notes,
       created_by: row.created_by,
       created_by_name: row.profiles?.full_name || null,
@@ -724,6 +761,7 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
     formatted = formatted.filter(
       (t) =>
         t.transaction_number.toLowerCase().includes(term) ||
+        t.production_period_code?.toLowerCase().includes(term) ||
         t.item_code?.toLowerCase().includes(term) ||
         t.item_name?.toLowerCase().includes(term) ||
         t.category_label?.toLowerCase().includes(term) ||
@@ -731,7 +769,10 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
     );
   }
 
-  // Calculate instantaneous running stock balance after each transaction
+  let totalInbound = 0;
+  let totalOutbound = 0;
+
+  // Calculate instantaneous running stock balance after each transaction and overall sums
   if (formatted.length > 0) {
     const itemIds = Array.from(new Set(formatted.map((f) => f.item_id)));
     const warehouseIds = Array.from(new Set(formatted.map((f) => f.warehouse_id)));
@@ -749,9 +790,13 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
       const txBalanceAfterMap = new Map<string, number>();
 
       for (const h of allHistory) {
+        const q = Number(h.quantity) || 0;
+        if (q > 0) totalInbound += q;
+        else if (q < 0) totalOutbound += Math.abs(q);
+
         const pairKey = `${h.warehouse_id}:::${h.item_id}`;
         const prev = runningBalanceMap.get(pairKey) || 0;
-        const current = prev + (Number(h.quantity) || 0);
+        const current = prev + q;
         runningBalanceMap.set(pairKey, current);
         txBalanceAfterMap.set(h.id, current);
       }
@@ -765,7 +810,7 @@ export async function fetchInventoryTransactions(params: TransactionFilterParams
 
   const totalCount = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  return { data: formatted, totalCount, page, pageSize, totalPages };
+  return { data: formatted, totalCount, page, pageSize, totalPages, totalInbound, totalOutbound };
 }
 
 /**
@@ -1141,14 +1186,14 @@ export async function fetchItemOptions(): Promise<WarehouseItemOption[]> {
   const items: WarehouseItemOption[] = [];
 
   const CATEGORY_LABELS: Record<string, string> = {
-    raw_material: 'Nguyên vật liệu chính',
+    raw_material: 'Nguyên vật liệu',
     chemical: 'Hóa chất công nghiệp',
-    spare_part: 'Phụ tùng & Linh kiện cơ điện',
-    packaging: 'Vật tư bao bì & Đóng gói',
-    consumable: 'Vật tư tiêu hao / BHLĐ',
+    spare_part: 'Phụ tùng cơ điện',
+    packaging: 'Bao bì & Đóng gói',
+    consumable: 'Tiêu hao / BHLĐ',
     fuel_energy: 'Nhiên liệu & Năng lượng',
-    other: 'Vật tư phụ trợ khác',
-    finished_good: 'Thành phẩm sản xuất',
+    other: 'Vật tư phụ trợ',
+    finished_good: 'Thành phẩm',
     semi_finished: 'Bán thành phẩm',
     by_product: 'Phụ phẩm thu hồi',
     byproduct: 'Phụ phẩm thu hồi',

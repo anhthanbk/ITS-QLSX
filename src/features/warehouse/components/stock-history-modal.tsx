@@ -7,7 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Boxes,
-  FileText,
+  Calendar,
   User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -77,14 +77,18 @@ export const StockHistoryModal: React.FC<StockHistoryModalProps> = ({
     }
   };
 
-  // Quick stats from current transactions query
-  const totalInboundInPage = transactions
-    .filter((t) => t.quantity > 0)
-    .reduce((sum, t) => sum + t.quantity, 0);
+  // Quick stats from transactions query (overall or page-fallback)
+  const totalInbound =
+    txData?.totalInbound ??
+    transactions
+      .filter((t) => t.quantity > 0)
+      .reduce((sum, t) => sum + t.quantity, 0);
 
-  const totalOutboundInPage = transactions
-    .filter((t) => t.quantity < 0)
-    .reduce((sum, t) => sum + Math.abs(t.quantity), 0);
+  const totalOutbound =
+    txData?.totalOutbound ??
+    transactions
+      .filter((t) => t.quantity < 0)
+      .reduce((sum, t) => sum + Math.abs(t.quantity), 0);
 
   return (
     <div
@@ -214,11 +218,11 @@ export const StockHistoryModal: React.FC<StockHistoryModalProps> = ({
             </span>
             <span className="text-muted-foreground/40">•</span>
             <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-              + {totalInboundInPage.toLocaleString('vi-VN')} {item.unitOfMeasure}
+              + {totalInbound.toLocaleString('vi-VN')} {item.unitOfMeasure}
             </span>
             <span className="text-muted-foreground/40">•</span>
             <span className="font-semibold text-rose-600 dark:text-rose-400">
-              - {totalOutboundInPage.toLocaleString('vi-VN')} {item.unitOfMeasure}
+              - {totalOutbound.toLocaleString('vi-VN')} {item.unitOfMeasure}
             </span>
           </div>
         </div>
@@ -251,11 +255,10 @@ export const StockHistoryModal: React.FC<StockHistoryModalProps> = ({
                   <thead>
                     <tr className="border-b border-border bg-muted/50 font-semibold text-muted-foreground">
                       <th className="py-2.5 px-3 whitespace-nowrap">Thời gian</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Mã phiếu</th>
+                      <th className="py-2.5 px-3 whitespace-nowrap">Mã đợt / kỳ sản xuất</th>
                       <th className="py-2.5 px-3 whitespace-nowrap">Loại giao dịch</th>
                       <th className="py-2.5 px-3 whitespace-nowrap">Kho lưu trữ</th>
                       <th className="py-2.5 px-3 text-right whitespace-nowrap">Số lượng</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap">Chứng từ / Ca SX</th>
                       <th className="py-2.5 px-3 whitespace-nowrap">Người lập</th>
                       <th className="py-2.5 px-3">Ghi chú</th>
                     </tr>
@@ -273,9 +276,27 @@ export const StockHistoryModal: React.FC<StockHistoryModalProps> = ({
                             {formatDateTime(tx.created_at)}
                           </td>
 
-                          {/* Mã phiếu */}
-                          <td className="py-2.5 px-3 font-mono font-bold text-foreground whitespace-nowrap">
-                            {tx.transaction_number}
+                          {/* Mã đợt / kỳ sản xuất */}
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            {tx.production_period_code ? (
+                              <div className="flex flex-wrap items-center gap-1 max-w-[280px]">
+                                {tx.production_period_code.split(',').map((code, idx) => {
+                                  const trimmed = code.trim();
+                                  return (
+                                    <span
+                                      key={idx}
+                                      className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded shadow-2xs"
+                                      title={`Mã đợt/kỳ SX: ${trimmed}`}
+                                    >
+                                      <Calendar className="h-3 w-3 shrink-0" />
+                                      {trimmed}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground/60 font-mono text-[11px]">—</span>
+                            )}
                           </td>
 
                           {/* Loại nghiệp vụ */}
@@ -305,18 +326,6 @@ export const StockHistoryModal: React.FC<StockHistoryModalProps> = ({
                               {isInbound ? '+' : ''}
                               {tx.quantity.toLocaleString('vi-VN')} {item.unitOfMeasure}
                             </span>
-                          </td>
-
-                          {/* Chứng từ tham chiếu */}
-                          <td className="py-2.5 px-3 whitespace-nowrap">
-                            {tx.reference_doc_type ? (
-                              <span className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-                                <FileText className="h-3 w-3 text-muted-foreground" />
-                                {tx.reference_doc_type}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground/60">—</span>
-                            )}
                           </td>
 
                           {/* Người lập */}
