@@ -15,3 +15,5 @@ export * from './material-form-dialog';
 export * from './product-catalog-table';
 export * from './product-form-dialog';
 export * from './product-delete-dialog';
+export * from './stock-history-modal';
+export * from './material-inventory-dashboard';

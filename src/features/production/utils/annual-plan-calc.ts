@@ -5,6 +5,7 @@ import type {
   AnnualPlanMonthKPI,
   AnnualPlanProductRow,
   AnnualPlanMaterialRow,
+  MaterialCategoryGroup,
 } from '../types';
 import { normalizeProductType } from '../types';
 
@@ -340,7 +341,7 @@ export function computeAnnualSummary(params: {
  */
 export function computeItemNorm(
   quantity: number,
-  _categoryGroup: 'material' | 'fuel' | 'supply',
+  _categoryGroup: MaterialCategoryGroup,
   finishedProductTons: number,
 ): number {
   const effectiveProductTons = finishedProductTons || 0;

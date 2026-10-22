@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Cpu,
@@ -16,6 +16,12 @@ import {
   CheckCircle,
   Edit2,
   Trash2,
+  AlertTriangle,
+  Clock,
+  ShieldAlert,
+  Camera,
+  Maximize2,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { usePermissions } from '@/features/auth/hooks/use-permissions';
@@ -27,6 +33,11 @@ import {
   useMachineAdjustments,
   useDeleteMachineAdjustment,
 } from '../hooks/use-machine-adjustments';
+import {
+  useMachinePatrolIncidents,
+  useUpdateIncidentResolutionPhoto,
+} from '@/features/production/hooks/use-production-patrols';
+import { uploadIncidentPhoto } from '@/features/production/api/production-patrol-api';
 import { MachineAdjustmentDialog } from './machine-adjustment-dialog';
 import { MachineAdjustmentDeleteDialog } from './machine-adjustment-delete-dialog';
 
@@ -50,9 +61,46 @@ export const MachineDetailModal: React.FC<MachineDetailModalProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'info' | 'adjustments' | 'plans' | 'orders'>(
     initialTab,
   );
+  const [orderView, setOrderView] = useState<'patrol_incidents' | 'work_orders'>('patrol_incidents');
   const [isAdjustmentOpen, setIsAdjustmentOpen] = useState(false);
   const [editingAdjustment, setEditingAdjustment] = useState<MachineAdjustment | null>(null);
   const [deletingAdjustment, setDeletingAdjustment] = useState<MachineAdjustment | null>(null);
+
+  // Lightbox xem ảnh sự cố / sau khắc phục
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string } | null>(null);
+  const [uploadingIncidentId, setUploadingIncidentId] = useState<string | null>(null);
+  const resolutionFileInputRef = useRef<HTMLInputElement>(null);
+  const [targetIncidentForPhoto, setTargetIncidentForPhoto] = useState<string | null>(null);
+
+  const updateResolutionPhotoMutation = useUpdateIncidentResolutionPhoto();
+
+  const handleTriggerUploadResolutionPhoto = (incidentId: string) => {
+    setTargetIncidentForPhoto(incidentId);
+    if (resolutionFileInputRef.current) {
+      resolutionFileInputRef.current.value = '';
+      resolutionFileInputRef.current.click();
+    }
+  };
+
+  const handleResolutionFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetIncidentForPhoto) return;
+
+    setUploadingIncidentId(targetIncidentForPhoto);
+    try {
+      const publicUrl = await uploadIncidentPhoto(file, 'resolution');
+      await updateResolutionPhotoMutation.mutateAsync({
+        incidentId: targetIncidentForPhoto,
+        resolutionImageUrl: publicUrl,
+      });
+    } catch (err) {
+      console.error('Failed to update resolution photo:', err);
+      alert(err instanceof Error ? err.message : 'Tải ảnh sau khắc phục thất bại.');
+    } finally {
+      setUploadingIncidentId(null);
+      setTargetIncidentForPhoto(null);
+    }
+  };
 
   const { isAdmin, hasRole } = usePermissions();
   const canAdminEditDelete = isAdmin || hasRole('admin');
@@ -89,6 +137,8 @@ export const MachineDetailModal: React.FC<MachineDetailModalProps> = ({
     page: 1,
     pageSize: 50,
   });
+
+  const { data: patrolIncidents = [] } = useMachinePatrolIncidents(machine?.id);
 
   if (!isOpen || !machine) return null;
 
@@ -200,7 +250,7 @@ export const MachineDetailModal: React.FC<MachineDetailModalProps> = ({
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            Lịch sử sửa chữa & Sự cố ({orders.length})
+            Lịch sử sửa chữa & Sự cố ({orders.length + patrolIncidents.length})
           </button>
         </div>
 
@@ -545,39 +595,280 @@ export const MachineDetailModal: React.FC<MachineDetailModalProps> = ({
           )}
 
           {activeSubTab === 'orders' && (
-            <div className="space-y-3">
-              {orders.length === 0 ? (
-                <div className="text-center py-8 text-xs text-muted-foreground">
-                  <ClipboardList className="h-8 w-8 mx-auto mb-2 text-muted-foreground/60" />
-                  Chưa có phiếu sửa chữa nào được tạo cho thiết bị này.
-                </div>
-              ) : (
-                <div className="divide-y divide-border rounded-xl border border-border overflow-hidden text-xs">
-                  {orders.map((o) => (
-                    <div key={o.id} className="p-3.5 flex items-center justify-between hover:bg-accent/20">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-foreground bg-accent/60 px-1.5 py-0.5 rounded text-[11px]">
-                            {o.work_order_number}
-                          </span>
-                          <span className="font-semibold text-foreground">{o.reported_issue}</span>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground mt-1">
-                          Kỹ thuật viên: {o.assigned_technician ? `${o.assigned_technician.first_name} ${o.assigned_technician.last_name}` : 'Chưa gán'} • Ngày: {o.scheduled_date}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-accent text-foreground">
-                          {o.status}
-                        </span>
-                        {o.downtime_minutes !== null && (
-                          <div className="text-[11px] text-destructive mt-0.5 font-medium">
-                            Dừng máy: {o.downtime_minutes} phút
-                          </div>
-                        )}
-                      </div>
+            <div className="space-y-4">
+              {/* Segmented view switcher for Patrol Incidents vs Work Orders */}
+              <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
+                <button
+                  type="button"
+                  onClick={() => setOrderView('patrol_incidents')}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                    orderView === 'patrol_incidents'
+                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shadow-2xs'
+                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground border border-transparent'
+                  }`}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <span>Sự cố tuần kiểm hiện trường ({patrolIncidents.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOrderView('work_orders')}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                    orderView === 'work_orders'
+                      ? 'bg-primary/10 text-primary border border-primary/20 shadow-2xs'
+                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground border border-transparent'
+                  }`}
+                >
+                  <ClipboardList className="h-3.5 w-3.5" />
+                  <span>Phiếu sửa chữa Cơ điện ({orders.length})</span>
+                </button>
+              </div>
+
+              {/* View 1: Sự cố tuần kiểm hiện trường */}
+              {orderView === 'patrol_incidents' && (
+                <div className="space-y-3">
+                  {patrolIncidents.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-muted-foreground rounded-xl border border-dashed border-border p-6 bg-muted/10">
+                      <ShieldAlert className="h-8 w-8 mx-auto mb-2 text-emerald-500/70" />
+                      <div className="font-semibold text-foreground">Không có sự cố tuần kiểm nào</div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Các ca tuần kiểm gần đây của thiết bị này đều được xác nhận hoạt động bình thường.
+                      </p>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="space-y-3">
+                      {patrolIncidents.map((inc) => (
+                        <div
+                          key={inc.id}
+                          className="rounded-xl border border-border bg-card p-4 space-y-3 text-xs shadow-2xs transition-colors hover:border-primary/30"
+                        >
+                          {/* Top Row: Mã sự cố, Khu vực, Thời gian & Người báo cáo */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-foreground bg-accent px-2 py-0.5 rounded border border-border">
+                                {inc.incident_code}
+                              </span>
+                              <span className="font-medium text-muted-foreground">
+                                {inc.area_name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                              <span>Công nhân: <strong className="text-foreground">{inc.reporter_name}</strong></span>
+                              <span>•</span>
+                              <span>{new Date(inc.reported_at).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                            </div>
+                          </div>
+
+                          {/* Middle Row: Hiện tượng & Nội dung chi tiết */}
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 font-bold text-foreground">
+                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                              <span>{inc.condition_type}</span>
+                            </div>
+                            <p className="text-muted-foreground leading-relaxed pl-5 whitespace-pre-line">
+                              {inc.description}
+                            </p>
+                          </div>
+
+                          {/* Images Section: Ảnh sự cố & Ảnh sau khắc phục */}
+                          {(inc.incident_image_url || inc.resolution_image_url || inc.resolution_type !== 'maintenance_scheduled') && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                              {/* Ảnh sự cố */}
+                              {inc.incident_image_url ? (
+                                <div className="rounded-xl border border-border bg-muted/20 p-2 space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                                    <span className="flex items-center gap-1">
+                                      <span className="h-2 w-2 rounded-full bg-rose-500" />
+                                      1. Ảnh sự cố hiện trường
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setLightboxImage({ url: inc.incident_image_url!, title: `Ảnh sự cố: ${inc.incident_code}` })}
+                                      className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[10px]"
+                                    >
+                                      <Maximize2 className="h-3 w-3" /> Xem lớn
+                                    </button>
+                                  </div>
+                                  <div
+                                    onClick={() => setLightboxImage({ url: inc.incident_image_url!, title: `Ảnh sự cố: ${inc.incident_code}` })}
+                                    className="relative group h-28 w-full overflow-hidden rounded-lg border border-border bg-background cursor-pointer"
+                                  >
+                                    <img
+                                      src={inc.incident_image_url}
+                                      alt="Ảnh sự cố"
+                                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                                    />
+                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-medium gap-1">
+                                      <Maximize2 className="h-4 w-4" /> Phóng to
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-3 flex items-center justify-center text-center text-muted-foreground text-[11px]">
+                                  Chưa có ảnh sự cố hiện trường
+                                </div>
+                              )}
+
+                              {/* Ảnh sau khắc phục */}
+                              {inc.resolution_image_url ? (
+                                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-2 space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                    <span className="flex items-center gap-1">
+                                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                      2. Ảnh sau khắc phục
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleTriggerUploadResolutionPhoto(inc.id)}
+                                        disabled={uploadingIncidentId === inc.id}
+                                        className="text-[10px] text-muted-foreground hover:text-primary flex items-center gap-0.5"
+                                        title="Cập nhật ảnh khác"
+                                      >
+                                        <Camera className="h-3 w-3" /> Đổi ảnh
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setLightboxImage({ url: inc.resolution_image_url!, title: `Ảnh sau khắc phục: ${inc.incident_code}` })}
+                                        className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[10px]"
+                                      >
+                                        <Maximize2 className="h-3 w-3" /> Xem lớn
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div
+                                    onClick={() => setLightboxImage({ url: inc.resolution_image_url!, title: `Ảnh sau khắc phục: ${inc.incident_code}` })}
+                                    className="relative group h-28 w-full overflow-hidden rounded-lg border border-border bg-background cursor-pointer"
+                                  >
+                                    <img
+                                      src={inc.resolution_image_url}
+                                      alt="Ảnh sau khắc phục"
+                                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                                    />
+                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-medium gap-1">
+                                      <Maximize2 className="h-4 w-4" /> Phóng to
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-3 flex flex-col items-center justify-center text-center gap-1.5">
+                                  <span className="text-[11px] text-muted-foreground">Chưa có ảnh sau khắc phục</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTriggerUploadResolutionPhoto(inc.id)}
+                                    disabled={uploadingIncidentId === inc.id}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+                                  >
+                                    {uploadingIncidentId === inc.id ? (
+                                      <>
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        <span>Đang tải...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Camera className="h-3.5 w-3.5" />
+                                        <span>+ Bổ sung ảnh sau xử lý</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Bottom Row: Cách thức xử lý & Liên kết Phiếu bảo dưỡng */}
+                          <div className="pt-1">
+                            {inc.resolution_type === 'resolved' && (
+                              <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-emerald-700 dark:text-emerald-300">
+                                <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                <div>
+                                  <span className="font-bold">Đã xử lý tại chỗ: </span>
+                                  <span className="text-muted-foreground text-[11px]">Đã được công nhân tuần kiểm tự khắc phục xong ngay trong ca làm việc.</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {inc.resolution_type === 'temporary_fix' && (
+                              <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-amber-700 dark:text-amber-300">
+                                <Clock className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                                <div>
+                                  <span className="font-bold">Xử lý tạm thời: </span>
+                                  <span className="text-muted-foreground text-[11px]">Đã khắc phục tạm hoặc giảm tải để duy trì chạy máy, đang tiếp tục theo dõi sát.</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {inc.resolution_type === 'maintenance_scheduled' && (
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg bg-rose-500/10 border border-rose-500/20 px-3 py-2">
+                                <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300">
+                                  <Wrench className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                                  <span className="font-bold">Đã đưa vào kế hoạch bảo dưỡng Cơ điện</span>
+                                </div>
+                                {inc.work_order_number ? (
+                                  <div className="flex items-center gap-2 text-[11px]">
+                                    <span className="text-muted-foreground">Phiếu sửa chữa:</span>
+                                    <span className="font-mono font-bold text-foreground bg-background px-2 py-0.5 rounded border border-border">
+                                      {inc.work_order_number}
+                                    </span>
+                                    {inc.work_order_status && (
+                                      <span className="font-bold uppercase text-[10px] px-1.5 py-0.5 rounded bg-rose-200 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200">
+                                        {inc.work_order_status}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-[11px] text-muted-foreground italic">
+                                    Đang chờ phòng Cơ điện tiếp nhận lập phiếu
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* View 2: Phiếu sửa chữa Cơ điện (Work Orders) */}
+              {orderView === 'work_orders' && (
+                <div className="space-y-3">
+                  {orders.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-muted-foreground rounded-xl border border-dashed border-border p-6 bg-muted/10">
+                      <ClipboardList className="h-8 w-8 mx-auto mb-2 text-muted-foreground/60" />
+                      Chưa có phiếu sửa chữa nào được tạo cho thiết bị này.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-border rounded-xl border border-border overflow-hidden text-xs">
+                      {orders.map((o) => (
+                        <div key={o.id} className="p-3.5 flex items-center justify-between hover:bg-accent/20">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-foreground bg-accent/60 px-1.5 py-0.5 rounded text-[11px]">
+                                {o.work_order_number}
+                              </span>
+                              <span className="font-semibold text-foreground">{o.reported_issue}</span>
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-1">
+                              Kỹ thuật viên: {o.assigned_technician ? `${o.assigned_technician.first_name} ${o.assigned_technician.last_name}` : 'Chưa gán'} • Ngày: {o.scheduled_date}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-accent text-foreground">
+                              {o.status}
+                            </span>
+                            {o.downtime_minutes !== null && (
+                              <div className="text-[11px] text-destructive mt-0.5 font-medium">
+                                Dừng máy: {o.downtime_minutes} phút
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -611,6 +902,48 @@ export const MachineDetailModal: React.FC<MachineDetailModalProps> = ({
         onConfirm={handleConfirmDeleteAdj}
         isDeleting={isDeletingAdj}
       />
+
+      {/* Hidden input to upload resolution photo */}
+      <input
+        ref={resolutionFileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleResolutionFileSelected}
+        className="hidden"
+      />
+
+      {/* Lightbox Modal xem ảnh toàn màn hình */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md animate-in fade-in duration-150"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div
+            className="relative flex flex-col max-h-[92vh] max-w-4xl overflow-hidden rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between bg-zinc-900/90 px-4 py-3 text-white border-b border-zinc-800">
+              <span className="text-sm font-semibold truncate pr-4">{lightboxImage.title}</span>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="rounded-full bg-zinc-800 p-1.5 text-zinc-300 hover:bg-zinc-700 hover:text-white transition-colors"
+                title="Đóng (Esc)"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-3 flex items-center justify-center bg-zinc-950">
+              <img
+                src={lightboxImage.url}
+                alt={lightboxImage.title}
+                className="max-h-[78vh] w-auto max-w-full rounded-lg object-contain shadow-md"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

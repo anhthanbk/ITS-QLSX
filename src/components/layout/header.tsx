@@ -1,25 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Menu,
   Bell,
   User,
   LogOut,
   ChevronDown,
   ShieldCheck,
-  CheckCircle,
+  LayoutGrid,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useToast } from '@/components/feedback/use-toast';
-import { useLayout } from './use-layout';
-import { Breadcrumbs } from './breadcrumbs';
 import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { Button } from '@/components/ui/button';
 
 export const Header: React.FC = () => {
   const { user, signOut } = useAuth();
   const { info } = useToast();
-  const { toggleMobileSidebar } = useLayout();
   const navigate = useNavigate();
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -55,36 +51,31 @@ export const Header: React.FC = () => {
   const initial = fullName.charAt(0).toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-border bg-background/85 px-4 sm:px-6 backdrop-blur-md">
-      {/* Left section: Mobile hamburger + Breadcrumbs */}
-      <div className="flex items-center gap-3 min-w-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          id="mobile-sidebar-toggle"
-          onClick={toggleMobileSidebar}
-          aria-label="Mở thanh điều hướng"
-          className="lg:hidden rounded-lg text-muted-foreground hover:text-foreground shrink-0"
+    <header className="sticky top-0 z-50 flex h-16 w-full items-center justify-between border-b border-border bg-background/95 px-4 sm:px-6 backdrop-blur-md shadow-2xs">
+      {/* Left section: Brand logo + Dynamic Breadcrumbs */}
+      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+        {/* Brand ITS Production (1-click to Home) */}
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 rounded-xl hover:opacity-90 transition-opacity shrink-0"
+          title="Về Trang chủ điều hành ITS CHANNEL"
         >
-          <Menu className="h-5 w-5" />
-        </Button>
-
-        {/* Dynamic Breadcrumbs */}
-        <div className="hidden sm:block truncate">
-          <Breadcrumbs />
-        </div>
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-800 text-white font-black text-xs shadow-xs ring-1 ring-emerald-700/50">
+            ITS
+          </div>
+          <div className="hidden sm:block">
+            <span className="text-sm font-black tracking-tight text-foreground block leading-tight">
+              ITS CHANNEL
+            </span>
+            <span className="text-[10px] text-muted-foreground block font-medium">
+              ERP system
+            </span>
+          </div>
+        </Link>
       </div>
 
-      {/* Right section: System status, Theme, Notifications, User menu */}
+      {/* Right section: Theme, Notifications, User menu */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* System online status badge */}
-        <div className="hidden md:flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50/50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-400">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-          </span>
-          <span>Hệ thống trực tuyến</span>
-        </div>
 
         {/* Theme Toggle */}
         <ThemeToggle />
@@ -99,102 +90,85 @@ export const Header: React.FC = () => {
           className="relative rounded-lg text-muted-foreground hover:text-foreground"
         >
           <Bell className="h-4.5 w-4.5" />
-          <span className="absolute top-2 right-2 flex h-2 w-2">
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-primary"></span>
-          </span>
+          <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-500" />
         </Button>
 
         {/* User profile dropdown */}
         <div className="relative" ref={profileMenuRef}>
           <button
             type="button"
-            id="user-profile-menu-button"
-            onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+            id="user-menu-button"
+            onClick={() => setIsProfileMenuOpen((prev) => !prev)}
             aria-expanded={isProfileMenuOpen}
-            aria-haspopup="true"
-            aria-label="Menu tài khoản người dùng"
-            className="flex items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            aria-haspopup="menu"
+            className="flex items-center gap-2 rounded-xl p-1.5 hover:bg-muted transition-colors cursor-pointer"
           >
-            {/* User Avatar Circle */}
-            {user?.profile?.avatar_url ? (
-              <img
-                src={user.profile.avatar_url}
-                alt={fullName}
-                className="h-8 w-8 rounded-full object-cover ring-1 ring-primary/20"
-              />
-            ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs ring-1 ring-primary/20">
-                {initial}
-              </div>
-            )}
-
-            {/* Name and role (desktop) */}
-            <div className="hidden sm:flex flex-col text-left">
-              <span className="text-xs font-semibold text-foreground leading-tight truncate max-w-[120px]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-800 text-white font-bold text-xs ring-2 ring-emerald-600/30 shadow-xs">
+              {initial}
+            </div>
+            <div className="hidden xl:flex flex-col text-left">
+              <span className="text-xs font-bold text-foreground leading-tight truncate max-w-[120px]">
                 {fullName}
               </span>
-              <span className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                <ShieldCheck className="h-3 w-3 text-primary" />
+              <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">
                 {roleName}
               </span>
             </div>
-
-            <ChevronDown className="hidden sm:block h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
 
-          {/* Profile Dropdown Menu */}
+          {/* Profile dropdown menu */}
           {isProfileMenuOpen && (
             <div
               role="menu"
               aria-orientation="vertical"
-              className="absolute right-0 mt-2 w-56 origin-top-right rounded-xl border border-border bg-popover p-1.5 shadow-lg ring-1 ring-black/5 animate-in fade-in-50 zoom-in-95 z-50"
+              aria-labelledby="user-menu-button"
+              className="absolute right-0 top-full mt-1.5 w-56 rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150"
             >
-              {/* Profile summary header */}
-              <div className="px-3 py-2 border-b border-border/60 mb-1 flex items-center gap-2.5">
-                {user?.profile?.avatar_url ? (
-                  <img
-                    src={user.profile.avatar_url}
-                    alt={fullName}
-                    className="h-9 w-9 rounded-full object-cover ring-1 ring-border shrink-0"
-                  />
-                ) : (
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-sm">
-                    {initial}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold text-foreground truncate">{fullName}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
-                  <div className="mt-1 flex items-center gap-1 text-[10px] text-primary font-semibold">
-                    <CheckCircle className="h-3 w-3" />
-                    <span>{roleName}</span>
-                  </div>
+              {/* User summary */}
+              <div className="border-b border-border/80 px-3 py-2.5">
+                <p className="text-xs font-bold text-foreground truncate">{fullName}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
+                <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <ShieldCheck className="h-3 w-3" />
+                  <span>{roleName}</span>
                 </div>
               </div>
 
-              {/* Links */}
-              <Link
-                to="/profile"
-                onClick={() => setIsProfileMenuOpen(false)}
-                role="menuitem"
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
-              >
-                <User className="h-4 w-4 text-muted-foreground" />
-                <span>Hồ sơ cá nhân</span>
-              </Link>
-
-              <div className="my-1 border-t border-border/60" />
+              {/* Menu items */}
+              <div className="py-1">
+                <Link
+                  to="/"
+                  onClick={() => setIsProfileMenuOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
+                  role="menuitem"
+                >
+                  <LayoutGrid className="h-4 w-4 text-emerald-600" />
+                  <span>Cổng phòng ban</span>
+                </Link>
+                <Link
+                  to="/profile"
+                  onClick={() => setIsProfileMenuOpen(false)}
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
+                  role="menuitem"
+                >
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span>Hồ sơ cá nhân</span>
+                </Link>
+              </div>
 
               {/* Sign out */}
-              <button
-                type="button"
-                onClick={handleSignOut}
-                role="menuitem"
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-                <span>Đăng xuất</span>
-              </button>
+              <div className="border-t border-border/80 pt-1">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                  role="menuitem"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Đăng xuất</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

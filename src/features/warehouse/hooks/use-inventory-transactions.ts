@@ -25,6 +25,7 @@ export function useInventoryTransactions(params: TransactionFilterParams) {
       params.pageSize,
       params.search ?? '',
       params.warehouseId ?? 'all',
+      params.itemId ?? 'all',
       params.transactionType ?? 'all',
       params.itemType ?? 'all',
       params.startDate ?? '',

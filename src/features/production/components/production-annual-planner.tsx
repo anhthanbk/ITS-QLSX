@@ -18,9 +18,7 @@ import {
   Search,
   X,
   Settings2,
-  SlidersHorizontal,
   RotateCcw,
-  Eye,
   AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
@@ -51,7 +49,6 @@ import {
   sumMonthProductsByType,
 } from '../utils/annual-plan-calc';
 import { ProductionLineDialog } from './production-line-dialog';
-import { PlanStatusBadge } from './production-status-badge';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/feedback/use-toast';
 
@@ -1162,9 +1159,9 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
     const monthlyByTotals = MONTHS.map((m) =>
       sumMonthProductsByType(products, m, 'by_product'),
     );
-    csv += `Tổng sản lượng thành phẩm,-,-,tấn,${monthlyFinishedTotals.join(',')},${annualSummary.annualFinishedProductTons}\n`;
-    csv += `Tổng sản lượng bán thành phẩm,-,-,tấn,${monthlySemiTotals.join(',')},${annualSummary.annualSemiFinishedProductTons}\n`;
-    csv += `Tổng sản lượng phụ phẩm,-,-,tấn,${monthlyByTotals.join(',')},${annualSummary.annualByproductTons}\n\n`;
+    csv += `TP,-,-,tấn,${monthlyFinishedTotals.join(',')},${annualSummary.annualFinishedProductTons}\n`;
+    csv += `BTP,-,-,tấn,${monthlySemiTotals.join(',')},${annualSummary.annualSemiFinishedProductTons}\n`;
+    csv += `PP,-,-,tấn,${monthlyByTotals.join(',')},${annualSummary.annualByproductTons}\n\n`;
 
     // 2. Kế hoạch vật tư nguyên nhiên liệu (Không gộp tổng)
     csv += `2. KẾ HOẠCH VẬT TƯ NGUYÊN NHIÊN LIỆU\n`;
@@ -1237,256 +1234,236 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
 
   return (
     <div className="space-y-6">
-      {/* 1. Header & Main Toolbar */}
-      <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-sm md:flex-row md:items-center md:justify-between">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-bold text-foreground">
-              {activeLineTab === 'aggregate'
-                ? `Kế hoạch sản xuất năm ${selectedYear} - Tất cả dây chuyền (Tổng hợp)`
-                : `Kế hoạch sản xuất năm ${selectedYear} - ${selectedLine?.name || 'Dây chuyền'}`}
-            </h2>
-            {activeLineTab !== 'aggregate' && <PlanStatusBadge status={planStatus} />}
-            {canManage ? (
-              <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
-                Quyền lập kế hoạch (Trưởng phòng SX / Admin)
-              </span>
-            ) : (
-              <span className="rounded-md bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400">
-                Chế độ chỉ xem
-              </span>
-            )}
+      {/* 1. Unified Toolbar: Line controls (Row 1 on mobile) & Year/Plan controls (Row 2 on mobile) */}
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-2 sm:p-2.5 shadow-xs md:flex-row md:items-center md:justify-between">
+        {/* Row 1: Line Selection on Left + Line Setup Actions pushed to Far Right */}
+        <div className="flex w-full md:w-auto items-center justify-between gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* All lines (Aggregate) tab */}
+            <button
+              type="button"
+              onClick={() => setActiveLineTab('aggregate')}
+              className={cn(
+                'h-7 px-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer inline-flex items-center justify-center',
+                activeLineTab === 'aggregate'
+                  ? 'bg-primary text-primary-foreground shadow-xs'
+                  : 'bg-background border border-border text-foreground hover:bg-muted',
+              )}
+            >
+              Tất cả
+            </button>
+
+            {/* Individual line buttons */}
+            {lines.map((l) => {
+              const isActive = activeLineTab === l.id;
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  title={l.name}
+                  onClick={() => {
+                    setSelectedLineId(l.id);
+                    setActiveLineTab(l.id);
+                  }}
+                  className={cn(
+                    'h-7 px-2.5 rounded-lg text-xs font-semibold transition-all inline-flex items-center justify-center cursor-pointer',
+                    isActive
+                      ? 'bg-primary text-primary-foreground shadow-xs'
+                      : 'bg-background border border-border text-foreground hover:bg-muted',
+                  )}
+                >
+                  <span>{l.code}</span>
+                </button>
+              );
+            })}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {activeLineTab === 'aggregate'
-              ? 'Tổng hợp sản lượng (cộng dồn theo loại SP), thời gian & chất lượng bình quân và định mức KT-KT toàn nhà máy'
-              : 'Cấp độ Trưởng phòng sản xuất / Quản trị viên nhập kế hoạch sản lượng, vật tư nguyên nhiên liệu, thời gian vận hành và chất lượng từng tháng'}
-          </p>
+
+          {/* Cụm khoanh đỏ đẩy sang sát góc phải: Sửa line, Xóa line, Thêm line */}
+          {canManage && (
+            <div className="flex items-center gap-1 ml-auto shrink-0 pl-1.5 border-l border-border">
+              {activeLineTab !== 'aggregate' && selectedLine && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingLine(selectedLine);
+                      setIsLineDialogOpen(true);
+                    }}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background text-foreground hover:bg-muted transition-colors shadow-2xs cursor-pointer"
+                    title="Sửa thông số line"
+                    aria-label="Sửa thông số line"
+                  >
+                    <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteLineDialogOpen(true)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors shadow-2xs cursor-pointer"
+                    title="Xóa line"
+                    aria-label="Xóa line"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingLine(null);
+                  setIsLineDialogOpen(true);
+                }}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-colors shadow-2xs cursor-pointer"
+                title="Thiết lập line mới"
+                aria-label="Thiết lập line mới"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Filter Controls: Year & Actions */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Year selector */}
-          <div className="flex items-center rounded-lg border border-border bg-background px-2 py-1 shadow-sm">
+        {/* Row 2: Year selector on Left + Plan Action Buttons pushed to Far Right */}
+        <div className="flex w-full md:w-auto items-center justify-between gap-1.5">
+          {/* Year selector on Left */}
+          <div className="flex h-7 items-center rounded-lg border border-border bg-background px-1.5 shadow-2xs shrink-0">
             <button
               type="button"
               onClick={() => setSelectedYear((y) => y - 1)}
-              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+              className="p-0.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title="Năm trước"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-3.5 w-3.5" />
             </button>
-            <span className="px-2 text-sm font-semibold text-foreground">{selectedYear}</span>
+            <span className="px-1.5 text-xs font-bold text-foreground">{selectedYear}</span>
             <button
               type="button"
               onClick={() => setSelectedYear((y) => y + 1)}
-              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+              className="p-0.5 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
               title="Năm sau"
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
 
-          {/* Action buttons for single line */}
-          {activeLineTab !== 'aggregate' && (
-            <>
-              {/* Unlock edit button if approved */}
-              {canManage && planStatus === 'approved' && !isUnlockedForEdit && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsUnlockedForEdit(true);
-                    success(`Đã mở khóa chỉnh sửa kế hoạch năm ${selectedYear}.`, 'Sửa kế hoạch');
-                  }}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors shadow-sm"
-                  title="Mở khóa để chỉnh sửa kế hoạch đã duyệt"
-                >
-                  <Edit3 className="h-4 w-4" />
-                  <span>Sửa kế hoạch</span>
-                </button>
-              )}
-
-              {/* Reset button */}
-              {canManage && isUnlockedForEdit && (
-                <button
-                  type="button"
-                  onClick={handleResetForm}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-sm"
-                  title="Hủy các thay đổi và làm mới"
-                >
-                  <RotateCcw className="h-4 w-4 text-muted-foreground" />
-                  <span className="hidden sm:inline">Hủy sửa</span>
-                </button>
-              )}
-
-              {/* Delete Plan Button */}
-              {canManage && (
-                <button
-                  type="button"
-                  onClick={() => setIsDeleteDialogOpen(true)}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/20 transition-colors shadow-sm"
-                  title="Xóa toàn bộ kế hoạch năm này"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span className="hidden sm:inline">Xóa kế hoạch</span>
-                </button>
-              )}
-
-              {/* Export CSV */}
-              <button
-                type="button"
-                onClick={handleExportCSV}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-sm"
-                title="Xuất file CSV"
-              >
-                <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                <span className="hidden sm:inline">Xuất CSV</span>
-              </button>
-
-              {/* Print */}
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-sm"
-                title="In kế hoạch"
-              >
-                <Printer className="h-4 w-4 text-muted-foreground" />
-                <span className="hidden sm:inline">In</span>
-              </button>
-
-              {/* Approve button */}
-              {canApprove && planStatus !== 'approved' && (
-                <button
-                  type="button"
-                  onClick={handleApprove}
-                  disabled={approveMutation.isPending}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Phê duyệt</span>
-                </button>
-              )}
-
-              {/* Save button */}
-              {canManage && (!isReadOnly || isUnlockedForEdit) && (
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saveMutation.isPending}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50"
-                >
-                  <Save className="h-4 w-4" />
-                  <span>{saveMutation.isPending ? 'Đang lưu...' : 'Lưu kế hoạch'}</span>
-                </button>
-              )}
-            </>
-          )}
-
-          {/* Action buttons for Aggregate tab */}
-          {activeLineTab === 'aggregate' && (
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors shadow-sm"
-              title="In bảng tổng hợp"
-            >
-              <Printer className="h-4 w-4 text-muted-foreground" />
-              <span>In tổng hợp</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 2. Line Multi-Selection & Line Configuration Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-border bg-muted/30 p-2.5">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-semibold text-muted-foreground mr-1 flex items-center gap-1.5">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Dây chuyền:
-          </span>
-
-          {/* All lines (Aggregate) tab */}
-          <button
-            type="button"
-            onClick={() => setActiveLineTab('aggregate')}
-            className={cn(
-              'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
-              activeLineTab === 'aggregate'
-                ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-background border border-border text-foreground hover:bg-muted',
-            )}
-          >
-            Tất cả dây chuyền (Tổng hợp)
-          </button>
-
-          {/* Individual line buttons */}
-          {lines.map((l) => {
-            const isActive = activeLineTab === l.id;
-            return (
-              <button
-                key={l.id}
-                type="button"
-                onClick={() => {
-                  setSelectedLineId(l.id);
-                  setActiveLineTab(l.id);
-                }}
-                className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all flex items-center gap-1.5',
-                  isActive
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'bg-background border border-border text-foreground hover:bg-muted',
-                )}
-              >
-                <span>{l.code} - {l.name}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Line Setup & Delete Line Actions */}
-        {canManage && (
-          <div className="flex items-center gap-2">
-            {activeLineTab !== 'aggregate' && selectedLine && (
+          {/* Action buttons pushed to Far Right with ml-auto */}
+          <div className="flex items-center gap-1.5 ml-auto shrink-0">
+            {/* Action buttons for single line */}
+            {activeLineTab !== 'aggregate' && (
               <>
+                {/* Unlock edit button if approved */}
+                {canManage && planStatus === 'approved' && !isUnlockedForEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUnlockedForEdit(true);
+                      success(`Đã mở khóa chỉnh sửa kế hoạch năm ${selectedYear}.`, 'Sửa kế hoạch');
+                    }}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors shadow-2xs cursor-pointer"
+                    title="Sửa kế hoạch"
+                    aria-label="Sửa kế hoạch"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+
+                {/* Reset button */}
+                {canManage && isUnlockedForEdit && (
+                  <button
+                    type="button"
+                    onClick={handleResetForm}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background text-foreground hover:bg-accent transition-colors shadow-2xs cursor-pointer"
+                    title="Hủy sửa"
+                    aria-label="Hủy sửa"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                )}
+
+                {/* Delete Plan Button */}
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteDialogOpen(true)}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors shadow-2xs cursor-pointer"
+                    title="Xóa kế hoạch"
+                    aria-label="Xóa kế hoạch"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+
+                {/* Export CSV */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditingLine(selectedLine);
-                    setIsLineDialogOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors shadow-sm"
-                  title="Chỉnh sửa thông số công suất / ca của dây chuyền hiện tại"
+                  onClick={handleExportCSV}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background text-foreground hover:bg-accent transition-colors shadow-2xs cursor-pointer"
+                  title="Xuất CSV"
+                  aria-label="Xuất CSV"
                 >
-                  <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span>Sửa thông số line</span>
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
                 </button>
 
+                {/* Print */}
                 <button
                   type="button"
-                  onClick={() => setIsDeleteLineDialogOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-destructive/20 bg-destructive/10 px-2.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/20 transition-colors shadow-sm"
-                  title="Xóa dây chuyền sản xuất này"
+                  onClick={() => window.print()}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background text-foreground hover:bg-accent transition-colors shadow-2xs cursor-pointer"
+                  title="In kế hoạch"
+                  aria-label="In kế hoạch"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Xóa line</span>
+                  <Printer className="h-3.5 w-3.5 text-muted-foreground" />
                 </button>
+
+                {/* Approve button */}
+                {canApprove && planStatus !== 'approved' && (
+                  <button
+                    type="button"
+                    onClick={handleApprove}
+                    disabled={approveMutation.isPending}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs disabled:opacity-50 cursor-pointer"
+                    title="Phê duyệt kế hoạch"
+                    aria-label="Phê duyệt kế hoạch"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+
+                {/* Save button */}
+                {canManage && (!isReadOnly || isUnlockedForEdit) && (
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saveMutation.isPending}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors shadow-2xs disabled:opacity-50 cursor-pointer"
+                    title={saveMutation.isPending ? 'Đang lưu...' : 'Lưu kế hoạch'}
+                    aria-label="Lưu kế hoạch"
+                  >
+                    {saveMutation.isPending ? (
+                      <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
+                    ) : (
+                      <Save className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                )}
               </>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                setEditingLine(null);
-                setIsLineDialogOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors shadow-sm"
-              title="Tự thiết lập thêm dây chuyền sản xuất mới"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Thiết lập line mới</span>
-            </button>
+            {/* Action buttons for Aggregate tab */}
+            {activeLineTab === 'aggregate' && (
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background text-foreground hover:bg-accent transition-colors shadow-2xs cursor-pointer"
+                title="In tổng hợp"
+                aria-label="In tổng hợp"
+              >
+                <Printer className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* VIEW TẤT CẢ DÂY CHUYỀN (TỔNG HỢP) */}
@@ -1713,17 +1690,21 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                       ) : (
                         aggregateCalculations.aggregateMaterials.map((mat) => {
                           const groupLabel =
-                            mat.categoryGroup === 'material'
-                              ? 'Nguyên liệu'
-                              : mat.categoryGroup === 'fuel'
-                                ? 'Nhiên liệu'
-                                : 'Vật tư phụ';
+                            mat.categoryGroup === 'energy' || mat.materialKey.toLowerCase().includes('điện')
+                              ? 'Năng lượng'
+                              : mat.categoryGroup === 'material'
+                                ? 'Nguyên liệu'
+                                : mat.categoryGroup === 'fuel'
+                                  ? 'Nhiên liệu'
+                                  : 'Vật tư phụ';
                           const badgeClass =
-                            mat.categoryGroup === 'material'
-                              ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                              : mat.categoryGroup === 'fuel'
-                                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+                            mat.categoryGroup === 'energy' || mat.materialKey.toLowerCase().includes('điện')
+                              ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-300'
+                              : mat.categoryGroup === 'material'
+                                ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                : mat.categoryGroup === 'fuel'
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
 
                           return (
                             <tr key={mat.materialKey} className="hover:bg-muted/10 transition-colors">
@@ -2127,18 +2108,22 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                                   <span
                                     className={cn(
                                       'rounded px-1.5 py-0.5 text-[9px] font-semibold',
-                                      mat.categoryGroup === 'material'
-                                        ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                                        : mat.categoryGroup === 'fuel'
-                                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                          : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+                                      mat.categoryGroup === 'energy' || mat.materialName.toLowerCase().includes('điện')
+                                        ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-300'
+                                        : mat.categoryGroup === 'material'
+                                          ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                          : mat.categoryGroup === 'fuel'
+                                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                            : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
                                     )}
                                   >
-                                    {mat.categoryGroup === 'material'
-                                      ? 'Nguyên liệu'
-                                      : mat.categoryGroup === 'fuel'
-                                        ? 'Nhiên liệu'
-                                        : 'Vật tư phụ'}
+                                    {mat.categoryGroup === 'energy' || mat.materialName.toLowerCase().includes('điện')
+                                      ? 'Năng lượng'
+                                      : mat.categoryGroup === 'material'
+                                        ? 'Nguyên liệu'
+                                        : mat.categoryGroup === 'fuel'
+                                          ? 'Nhiên liệu'
+                                          : 'Vật tư phụ'}
                                   </span>
                                 </div>
                               </td>
@@ -2239,90 +2224,6 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                   </div>
                 </div>
               </div>
-
-              {/* Table: So sánh tiến độ & chỉ số giữa các Dây chuyền */}
-              <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                <div className="border-b border-border bg-muted/40 p-4">
-                  <h3 className="text-sm font-bold text-foreground">
-                    Bảng so sánh Kế hoạch & Trạng thái giữa các Dây chuyền năm {selectedYear}
-                  </h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/20 text-muted-foreground">
-                        <th className="px-3 py-2.5 font-semibold">Dây chuyền</th>
-                        <th className="px-2 py-2 font-semibold text-center" title="Công suất thực tế bình quân (tấn nguyên liệu / giờ vận hành)">
-                          Công suất TT (t/h)
-                        </th>
-                        <th className="px-2 py-2 font-semibold text-right">Sản lượng TP (tấn)</th>
-                        <th className="px-2 py-2 font-semibold text-right">Nguyên liệu KH (tấn)</th>
-                        <th className="px-2 py-2 font-semibold text-right">Giờ vận hành (h)</th>
-                        <th className="px-2 py-2 font-semibold text-center">Năng suất BQ (t/h)</th>
-                        <th className="px-2 py-2 font-semibold text-center">Thu hồi TP BQ (%)</th>
-                        <th className="px-2 py-2 font-semibold text-center text-purple-700 dark:text-purple-300">
-                          Thu hồi phụ phẩm (%)
-                        </th>
-                        <th className="px-2 py-2 font-semibold text-center">Trạng thái</th>
-                        <th className="px-3 py-2 font-semibold text-center w-28">Thao tác</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {aggregateCalculations.lineStats.map((stat) => (
-                        <tr key={stat.line.id} className="hover:bg-muted/10 transition-colors">
-                          <td className="px-3 py-2.5 font-bold text-foreground">
-                            <div>{stat.line.name}</div>
-                            <div className="text-[10px] text-muted-foreground">{stat.line.code}</div>
-                          </td>
-                          <td className="px-2 py-2 text-center text-foreground font-semibold">
-                            {formatNum(stat.avgCapacityTph, 2)}
-                          </td>
-                          <td className="px-2 py-2 text-right font-bold text-primary">
-                            {formatNum(stat.totalOutputTons)}
-                          </td>
-                          <td className="px-2 py-2 text-right text-foreground font-semibold">
-                            {formatNum(stat.totalInputTons)}
-                          </td>
-                          <td className="px-2 py-2 text-right text-foreground font-semibold">
-                            {formatNum(stat.totalOperatingHours, 0)}
-                          </td>
-                          <td className="px-2 py-2 text-center text-foreground">
-                            {formatNum(stat.avgProductivityTph, 2)}
-                          </td>
-                          <td className="px-2 py-2 text-center font-bold text-primary">
-                            {stat.avgRecoveryPct > 0 ? `${stat.avgRecoveryPct.toFixed(1)}%` : '-'}
-                          </td>
-                          <td className="px-2 py-2 text-center font-bold text-purple-700 dark:text-purple-300">
-                            {stat.byproductRecoveryPct > 0 ? `${stat.byproductRecoveryPct.toFixed(1)}%` : '-'}
-                          </td>
-                          <td className="px-2 py-2 text-center">
-                            {stat.status === 'not_created' ? (
-                              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                Chưa lập KH
-                              </span>
-                            ) : (
-                              <PlanStatusBadge status={stat.status} />
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedLineId(stat.line.id);
-                                setActiveLineTab(stat.line.id);
-                              }}
-                              className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                              <span>Chi tiết</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
             </>
           )}
         </div>
@@ -2364,10 +2265,11 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                         loadProductCatalog();
                         setIsProductModalOpen(true);
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors self-start sm:self-auto"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors self-start sm:self-auto shadow-sm"
+                      title="Chọn sản phẩm"
+                      aria-label="Chọn sản phẩm"
                     >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>Chọn sản phẩm</span>
+                      <Plus className="h-4 w-4" />
                     </button>
                   )}
                 </div>
@@ -2457,7 +2359,7 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                       {products.length > 0 && (
                         <tr className="border-t-2 border-border bg-emerald-500/10 font-bold text-emerald-800 dark:text-emerald-300">
                           <td className="sticky left-0 z-10 bg-emerald-500/15 px-3 py-2">
-                            Tổng sản lượng thành phẩm
+                            TP
                           </td>
                           <td className="px-2 py-2 text-center">tấn</td>
                           <td className="px-3 py-2 text-right font-black bg-emerald-500/20">
@@ -2479,7 +2381,7 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                       {products.length > 0 && (
                         <tr className="bg-amber-500/10 font-bold text-amber-800 dark:text-amber-300">
                           <td className="sticky left-0 z-10 bg-amber-500/15 px-3 py-2">
-                            Tổng sản lượng bán thành phẩm
+                            BTP
                           </td>
                           <td className="px-2 py-2 text-center">tấn</td>
                           <td className="px-3 py-2 text-right font-black bg-amber-500/20">
@@ -2501,7 +2403,7 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                       {products.length > 0 && (
                         <tr className="bg-purple-500/10 font-bold text-purple-800 dark:text-purple-300">
                           <td className="sticky left-0 z-10 bg-purple-500/15 px-3 py-2">
-                            Tổng sản lượng phụ phẩm
+                            PP
                           </td>
                           <td className="px-2 py-2 text-center">tấn</td>
                           <td className="px-3 py-2 text-right font-black bg-purple-500/20">
@@ -2547,10 +2449,11 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                         loadMaterialCatalog();
                         setIsMaterialModalOpen(true);
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors self-start sm:self-auto"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors self-start sm:self-auto shadow-sm"
+                      title="Chọn vật tư / nguyên liệu"
+                      aria-label="Chọn vật tư / nguyên liệu"
                     >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>Chọn vật tư / nguyên liệu</span>
+                      <Plus className="h-4 w-4" />
                     </button>
                   )}
                 </div>
@@ -2591,19 +2494,23 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                             (acc, val) => acc + (Number(val) || 0),
                             0,
                           );
-                          const groupLabel =
-                            mat.categoryGroup === 'material'
-                              ? 'Nguyên liệu'
-                              : mat.categoryGroup === 'fuel'
-                                ? 'Nhiên liệu'
-                                : 'Vật tư phụ';
-                          const badgeClass =
-                            mat.categoryGroup === 'material'
-                              ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                              : mat.categoryGroup === 'fuel'
-                                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
                           const isElectricity = mat.materialId === 'default-electricity';
+                          const groupLabel =
+                            mat.categoryGroup === 'energy' || isElectricity || mat.materialName.toLowerCase().includes('điện')
+                              ? 'Năng lượng'
+                              : mat.categoryGroup === 'material'
+                                ? 'Nguyên liệu'
+                                : mat.categoryGroup === 'fuel'
+                                  ? 'Nhiên liệu'
+                                  : 'Vật tư phụ';
+                          const badgeClass =
+                            mat.categoryGroup === 'energy' || isElectricity || mat.materialName.toLowerCase().includes('điện')
+                              ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-300'
+                              : mat.categoryGroup === 'material'
+                                ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                : mat.categoryGroup === 'fuel'
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
 
                           return (
                             <tr key={mat.materialId} className="hover:bg-muted/10 transition-colors">
@@ -3127,18 +3034,22 @@ export const ProductionAnnualPlanner: React.FC<ProductionAnnualPlannerProps> = (
                                   <span
                                     className={cn(
                                       'rounded px-1.5 py-0.5 text-[9px] font-semibold',
-                                      mat.categoryGroup === 'material'
-                                        ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                                        : mat.categoryGroup === 'fuel'
-                                          ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                                          : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+                                      mat.categoryGroup === 'energy' || mat.materialName.toLowerCase().includes('điện')
+                                        ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-300'
+                                        : mat.categoryGroup === 'material'
+                                          ? 'bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                          : mat.categoryGroup === 'fuel'
+                                            ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                            : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
                                     )}
                                   >
-                                    {mat.categoryGroup === 'material'
-                                      ? 'Nguyên liệu'
-                                      : mat.categoryGroup === 'fuel'
-                                        ? 'Nhiên liệu'
-                                        : 'Vật tư phụ'}
+                                    {mat.categoryGroup === 'energy' || mat.materialName.toLowerCase().includes('điện')
+                                      ? 'Năng lượng'
+                                      : mat.categoryGroup === 'material'
+                                        ? 'Nguyên liệu'
+                                        : mat.categoryGroup === 'fuel'
+                                          ? 'Nhiên liệu'
+                                          : 'Vật tư phụ'}
                                   </span>
                                 </div>
                                 {mat.materialCode && (

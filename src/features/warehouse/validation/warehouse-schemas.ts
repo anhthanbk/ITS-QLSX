@@ -146,6 +146,12 @@ export const productSchema = z.object({
     .trim()
     .min(1, 'Vui lòng nhập đơn vị tính')
     .max(20, 'Đơn vị tính không quá 20 ký tự'),
+  specifications: z
+    .string()
+    .trim()
+    .max(1000, 'Thông số kỹ thuật không vượt quá 1000 ký tự')
+    .optional()
+    .nullable(),
   base_sales_price: z.coerce.number().min(0, 'Giá bán niêm yết không được âm').default(0),
   standard_cycle_time_mins: z.coerce.number().min(0, 'Chu kỳ sản xuất không được âm').default(0),
   standard_labor_cost: z.coerce.number().min(0, 'Chi phí nhân công không được âm').default(0),

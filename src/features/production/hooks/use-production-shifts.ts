@@ -7,6 +7,7 @@ import {
   deleteProductionShift,
   createShiftDowntime,
   fetchShiftPlanContext,
+  batchSyncShiftsToWarehouse,
 } from '../api/production-api';
 import type { ProductionShiftFilterParams } from '../types';
 import type {
@@ -112,4 +113,28 @@ export function useCreateShiftDowntime() {
     },
   });
 }
+
+export function useBatchSyncShiftsToWarehouse() {
+  const queryClient = useQueryClient();
+  const { success, error } = useToast();
+
+  return useMutation({
+    mutationFn: batchSyncShiftsToWarehouse,
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['production-shifts'] });
+      queryClient.invalidateQueries({ queryKey: ['production-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-balances'] });
+      queryClient.invalidateQueries({ queryKey: ['warehouse-metrics'] });
+      success(
+        `Đã nghiệm thu và sinh thành công ${res.transactionsCreated} phiếu kho cho ${res.shiftsUpdated} ca sản xuất!`,
+        'Nghiệm thu thành công',
+      );
+    },
+    onError: (err: Error) => {
+      error(err.message || 'Lỗi khi sinh phiếu kho từ ca sản xuất.', 'Lỗi sinh phiếu');
+    },
+  });
+}
+
 

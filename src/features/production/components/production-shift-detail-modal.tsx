@@ -7,7 +7,7 @@ import {
   Award,
   Plus,
 } from 'lucide-react';
-import { type ProductionShift, isFinishedProduct } from '../types';
+import { type ProductionShift, isFinishedProduct, isSemiFinishedProduct } from '../types';
 import { useProductionShiftDetail } from '../hooks/use-production-shifts';
 import { ProductionShiftDowntimeDialog } from './production-shift-downtime-dialog';
 import { useCreateShiftDowntime } from '../hooks/use-production-shifts';
@@ -72,6 +72,15 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
     return Number(shift.product_output_tons || 0);
   })();
 
+  const semiFinishedOutput = (() => {
+    if (Array.isArray(shift.products_output) && shift.products_output.length > 0) {
+      return shift.products_output.reduce((acc, p) => {
+        return isSemiFinishedProduct(p) ? acc + (Number(p.quantity_tons) || 0) : acc;
+      }, 0);
+    }
+    return 0;
+  })();
+
   // Công suất = Nguyên liệu cấp / Giờ chạy (TPH)
   const actualCapacity =
     runHours > 0 && rawInput > 0
@@ -83,6 +92,12 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
     rawInput > 0 && finishedOutput > 0
       ? Number(((finishedOutput / rawInput) * 100).toFixed(2))
       : (shift.actual_recovery_rate_pct && Number(shift.actual_recovery_rate_pct) > 0 ? Number(shift.actual_recovery_rate_pct) : 0);
+
+  // Thu hồi bán thành phẩm riêng
+  const actualSemiRecovery =
+    rawInput > 0 && semiFinishedOutput > 0
+      ? Number(((semiFinishedOutput / rawInput) * 100).toFixed(2))
+      : 0;
 
   return (
     <>
@@ -97,6 +112,15 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-bold text-foreground">{shift.shift_code}</h2>
+                  {shift.warehouse_synced ? (
+                    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                      ✓ Đã nhập kho
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                      Chưa nhập kho
+                    </span>
+                  )}
                 </div>
                 {(() => {
                   const isRange = Boolean(
@@ -181,10 +205,15 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <span className="text-[11px] text-muted-foreground">Tỷ lệ thu hồi cát</span>
+                    <span className="text-[11px] text-muted-foreground">Tỷ lệ thu hồi</span>
                     <div className="mt-1 text-base font-bold text-emerald-600 dark:text-emerald-400">
-                      {actualRecovery}%
+                      {finishedOutput > 0 ? `${actualRecovery}% (TP)` : semiFinishedOutput > 0 ? `${actualSemiRecovery}% (BTP)` : `${actualRecovery}%`}
                     </div>
+                    {semiFinishedOutput > 0 && finishedOutput > 0 && (
+                      <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5">
+                        Thu hồi BTP: {actualSemiRecovery}%
+                      </div>
+                    )}
                   </div>
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
                     <span className="text-[11px] text-muted-foreground">Chất lượng sản phẩm</span>
@@ -209,6 +238,7 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                             <th className="px-3 py-1.5">Tên sản phẩm</th>
                             <th className="px-3 py-1.5 text-center">Phân loại</th>
                             <th className="px-3 py-1.5 text-right">Sản lượng (Tấn)</th>
+                            <th className="px-3 py-1.5">Kho nhập & Vị trí</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
@@ -219,18 +249,43 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                               </td>
                               <td className="px-3 py-1.5 font-medium">{p.product_name}</td>
                               <td className="px-3 py-1.5 text-center">
-                                {p.is_out_of_plan ? (
-                                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                                    Ngoài KH
-                                  </span>
-                                ) : (
-                                  <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
-                                    Trong KH
-                                  </span>
-                                )}
+                                <div className="flex flex-wrap items-center justify-center gap-1">
+                                  {p.is_out_of_plan ? (
+                                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                      Ngoài KH
+                                    </span>
+                                  ) : (
+                                    <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-800 dark:bg-blue-950/60 dark:text-blue-300">
+                                      Trong KH
+                                    </span>
+                                  )}
+                                  {isSemiFinishedProduct(p) ? (
+                                    <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 border border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-300">
+                                      Bán TP
+                                    </span>
+                                  ) : isFinishedProduct(p) ? (
+                                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700 border border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                      Thành phẩm
+                                    </span>
+                                  ) : (
+                                    <span className="rounded bg-purple-50 px-1.5 py-0.5 text-[9px] font-semibold text-purple-700 border border-purple-200/60 dark:bg-purple-950/40 dark:text-purple-300">
+                                      Phụ phẩm
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-3 py-1.5 text-right font-bold text-foreground">
                                 {Number(p.quantity_tons).toLocaleString()} {p.unit_of_measure}
+                              </td>
+                              <td className="px-3 py-1.5 text-muted-foreground">
+                                {p.warehouse_name ? (
+                                  <span className="font-medium text-foreground">
+                                    {p.warehouse_name}
+                                    {p.storage_location ? ` • ${p.storage_location}` : ''}
+                                  </span>
+                                ) : (
+                                  '---'
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -254,6 +309,7 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                             <th className="px-3 py-1.5">Tên vật tư / Năng lượng</th>
                             <th className="px-3 py-1.5 text-right">Lượng tiêu hao</th>
                             <th className="px-3 py-1.5">ĐVT</th>
+                            <th className="px-3 py-1.5">Kho xuất</th>
                             <th className="px-3 py-1.5 text-right">KH tháng</th>
                             <th className="px-3 py-1.5">Ghi chú</th>
                           </tr>
@@ -262,12 +318,26 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                           {shift.materials_consumption.map((m, idx) => (
                             <tr key={idx} className="hover:bg-muted/20">
                               <td className="px-3 py-1.5">
-                                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                                  {m.category === 'fuel'
-                                    ? 'Nhiên liệu / Năng lượng'
-                                    : m.category === 'supply'
-                                      ? 'Vật tư phụ'
-                                      : 'Nguyên vật liệu'}
+                                <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                  m.category === 'energy' || (m.resource_name?.toLowerCase().includes('điện') || m.unit_of_measure?.toLowerCase() === 'kwh')
+                                    ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300'
+                                    : m.category === 'semi_finished'
+                                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                      : m.category === 'fuel'
+                                        ? 'bg-orange-500/15 text-orange-700 dark:text-orange-300'
+                                        : m.category === 'supply'
+                                          ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300'
+                                          : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                }`}>
+                                  {m.category === 'energy' || (m.resource_name?.toLowerCase().includes('điện') || m.unit_of_measure?.toLowerCase() === 'kwh')
+                                    ? 'Năng lượng'
+                                    : m.category === 'semi_finished'
+                                      ? 'Bán thành phẩm'
+                                      : m.category === 'fuel'
+                                        ? 'Nhiên liệu'
+                                        : m.category === 'supply'
+                                          ? 'Vật tư phụ'
+                                          : 'Nguyên vật liệu'}
                                 </span>
                               </td>
                               <td className="px-3 py-1.5 font-medium">{m.resource_name}</td>
@@ -275,6 +345,15 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                                 {Number(m.actual_quantity).toLocaleString()}
                               </td>
                               <td className="px-3 py-1.5 text-muted-foreground">{m.unit_of_measure}</td>
+                              <td className="px-3 py-1.5 text-muted-foreground">
+                                {(m.resource_name?.toLowerCase().includes('điện') || m.unit_of_measure?.toLowerCase() === 'kwh') ? (
+                                  <span className="italic text-[11px] text-amber-600 dark:text-amber-400">
+                                    Không qua kho (Lưới điện)
+                                  </span>
+                                ) : (
+                                  m.warehouse_name || '---'
+                                )}
+                              </td>
                               <td className="px-3 py-1.5 text-right text-muted-foreground">
                                 {m.planned_norm ? Number(m.planned_norm).toLocaleString() : '---'}
                               </td>
@@ -307,6 +386,7 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                             <tr>
                               <th className="px-3 py-1.5 w-10 text-center">#</th>
                               <th className="px-3 py-1.5">Phân loại dừng</th>
+                              <th className="px-3 py-1.5 text-center">Mã thiết bị</th>
                               <th className="px-3 py-1.5 text-center">Thời gian (Từ - Đến)</th>
                               <th className="px-3 py-1.5 text-center">Thời lượng</th>
                               <th className="px-3 py-1.5">Lý do / Nguyên nhân</th>
@@ -317,27 +397,49 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                             {shift.downtime_breakdown.events.map((evt, idx) => {
                               const isInc = evt.type === 'breakdown_incident';
                               const isMaint = evt.type === 'planned_maintenance';
+                              const subType = isInc
+                                ? evt.incident_category
+                                : isMaint
+                                ? evt.maintenance_type
+                                : evt.shutdown_type;
+
                               return (
                                 <tr key={idx} className="hover:bg-muted/20">
                                   <td className="px-3 py-2 text-center font-bold text-muted-foreground">
                                     {idx + 1}
                                   </td>
                                   <td className="px-3 py-2">
-                                    <span
-                                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                                        isInc
-                                          ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                    <div className="flex flex-col gap-0.5 items-start">
+                                      <span
+                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                          isInc
+                                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                            : isMaint
+                                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                            : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                                        }`}
+                                      >
+                                        {isInc
+                                          ? 'Sự cố dừng chuyền'
                                           : isMaint
-                                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                                          : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
-                                      }`}
-                                    >
-                                      {isInc
-                                        ? 'Sự cố dừng chuyền'
-                                        : isMaint
-                                        ? 'Dừng bảo trì'
-                                        : 'Nghỉ kế hoạch'}
-                                    </span>
+                                          ? 'Dừng bảo trì'
+                                          : 'Nghỉ kế hoạch'}
+                                      </span>
+                                      {subType && (
+                                        <span className="text-[10px] font-medium text-muted-foreground">
+                                          {subType}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    {evt.equipment_code ? (
+                                      <span className="inline-block rounded font-mono font-bold text-xs bg-primary/10 text-primary px-2 py-0.5">
+                                        {evt.equipment_code}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground text-xs">---</span>
+                                    )}
                                   </td>
                                   <td className="px-3 py-2 text-center font-mono font-medium text-foreground">
                                     {evt.start_time} → {evt.end_time}
@@ -346,11 +448,6 @@ export const ProductionShiftDetailModal: React.FC<ProductionShiftDetailModalProp
                                     {evt.duration_minutes || Math.round((evt.duration_hours || 0) * 60)} phút ({evt.duration_hours || 0}h)
                                   </td>
                                   <td className="px-3 py-2 text-foreground font-medium">
-                                    {evt.incident_category && (
-                                      <span className="mr-1 text-[10px] text-muted-foreground font-normal">
-                                        [{evt.incident_category}]
-                                      </span>
-                                    )}
                                     {evt.reason || '---'}
                                   </td>
                                   <td className="px-3 py-2 text-muted-foreground">

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   Search,
   Filter,
-  RotateCcw,
   Sliders,
   ChevronLeft,
   ChevronRight,
@@ -11,13 +10,187 @@ import {
   Layers,
   Building2,
   Boxes,
-  ArrowDownLeft,
-  ArrowUpRight,
+  History,
+  RotateCcw,
+  PackageCheck,
+  Wrench,
+  Truck,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { InventoryStockBalance, Warehouse } from '@/features/warehouse/types';
-import { ItemTypeBadge, WarehouseTypeBadge } from './warehouse-badges';
 import { useItemAggregatedStockBalances } from '../hooks/use-stock-balances';
+import { StockHistoryModal, type StockHistoryTargetItem } from './stock-history-modal';
+
+const WAREHOUSE_TYPE_CONFIG: Record<
+  string,
+  {
+    label: string;
+    shortLabel: string;
+    badgeClass: string;
+    icon: React.ComponentType<{ className?: string }>;
+    order: number;
+  }
+> = {
+  raw_material: {
+    label: 'Kho Nguyên Liệu Thô',
+    shortLabel: 'Nguyên liệu thô',
+    badgeClass: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30',
+    icon: Boxes,
+    order: 1,
+  },
+  finished_goods: {
+    label: 'Kho Thành Phẩm',
+    shortLabel: 'Thành phẩm',
+    badgeClass: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+    icon: PackageCheck,
+    order: 2,
+  },
+  spare_parts: {
+    label: 'Kho Phụ Tùng & Cơ Điện',
+    shortLabel: 'Phụ tùng cơ điện',
+    badgeClass: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/30',
+    icon: Wrench,
+    order: 3,
+  },
+  byproduct: {
+    label: 'Kho Phụ Phẩm & Thu Hồi',
+    shortLabel: 'Phụ phẩm thu hồi',
+    badgeClass: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/30',
+    icon: RotateCcw,
+    order: 4,
+  },
+  transit: {
+    label: 'Kho Trung Chuyển & Đệm',
+    shortLabel: 'Trung chuyển',
+    badgeClass: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30',
+    icon: Truck,
+    order: 5,
+  },
+  quarantine: {
+    label: 'Kho Cách Ly / Kiểm Định KCS',
+    shortLabel: 'Cách ly KCS',
+    badgeClass: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30',
+    icon: AlertTriangle,
+    order: 6,
+  },
+};
+
+const MATERIAL_CATEGORY_CONFIG: Record<
+  string,
+  {
+    label: string;
+    shortLabel: string;
+    badgeClass: string;
+    icon: React.ComponentType<{ className?: string }>;
+    order: number;
+  }
+> = {
+  raw_material: {
+    label: 'Nguyên Vật Liệu Thô & Khoáng Sản',
+    shortLabel: 'Nguyên liệu thô',
+    badgeClass: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30',
+    icon: Boxes,
+    order: 1,
+  },
+  chemical: {
+    label: 'Hóa Chất Xử Lý & Công Nghiệp',
+    shortLabel: 'Hóa chất xử lý',
+    badgeClass: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30',
+    icon: Boxes,
+    order: 2,
+  },
+  spare_part: {
+    label: 'Phụ Tùng Cơ Điện & Vật Tư Bảo Trì',
+    shortLabel: 'Phụ tùng cơ điện',
+    badgeClass: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/30',
+    icon: Wrench,
+    order: 3,
+  },
+  packaging: {
+    label: 'Bao Bì & Đóng Gói',
+    shortLabel: 'Bao bì & Đóng gói',
+    badgeClass: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border-cyan-500/30',
+    icon: PackageCheck,
+    order: 4,
+  },
+  consumable: {
+    label: 'Tiêu Hao & Bảo Hộ Lao Động',
+    shortLabel: 'Tiêu hao / BHLĐ',
+    badgeClass: 'bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/30',
+    icon: Boxes,
+    order: 5,
+  },
+  fuel_energy: {
+    label: 'Nhiên Liệu & Năng Lượng',
+    shortLabel: 'Nhiên liệu & Năng lượng',
+    badgeClass: 'bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30',
+    icon: Boxes,
+    order: 6,
+  },
+  finished_good: {
+    label: 'Thành Phẩm Hoàn Thiện',
+    shortLabel: 'Thành phẩm',
+    badgeClass: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+    icon: PackageCheck,
+    order: 7,
+  },
+  semi_finished: {
+    label: 'Bán Thành Phẩm & Dở Dang',
+    shortLabel: 'Bán thành phẩm',
+    badgeClass: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 border-indigo-500/30',
+    icon: Layers,
+    order: 8,
+  },
+  byproduct: {
+    label: 'Phụ Phẩm & Thu Hồi Tái Chế',
+    shortLabel: 'Phụ phẩm thu hồi',
+    badgeClass: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30',
+    icon: RotateCcw,
+    order: 9,
+  },
+  other: {
+    label: 'Vật Tư Khác & Phụ Trợ',
+    shortLabel: 'Vật tư khác',
+    badgeClass: 'bg-slate-500/10 text-slate-700 dark:text-slate-400 border-slate-500/30',
+    icon: Layers,
+    order: 10,
+  },
+};
+
+function getItemCategoryKey(item: {
+  category?: string;
+  category_label?: string;
+  item_type?: string;
+  item_code?: string;
+}): string {
+  const isSemi =
+    item.category === 'semi_finished' ||
+    item.category_label?.toLowerCase().includes('bán thành phẩm') ||
+    item.item_code?.toLowerCase().includes('btp');
+  if (isSemi) return 'semi_finished';
+
+  const isByProduct =
+    item.item_type === 'byproduct' ||
+    item.category === 'by_product' ||
+    item.category === 'byproduct' ||
+    item.category_label?.toLowerCase().includes('phụ phẩm');
+  if (isByProduct) return 'byproduct';
+
+  const isProduct =
+    item.item_type === 'product' ||
+    item.category === 'finished_good' ||
+    item.category === 'finished_goods' ||
+    item.category_label?.toLowerCase().includes('thành phẩm');
+  if (isProduct) return 'finished_good';
+
+  if (item.category && item.category in MATERIAL_CATEGORY_CONFIG) {
+    return item.category;
+  }
+
+  return 'other';
+}
 
 interface StockBalanceTableProps {
   data?: {
@@ -62,6 +235,18 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<'by_warehouse' | 'by_item'>('by_warehouse');
   const [expandedItemIds, setExpandedItemIds] = useState<Set<string>>(new Set());
+  const [historyTargetItem, setHistoryTargetItem] = useState<StockHistoryTargetItem | null>(null);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+  const handleOpenHistory = (target: StockHistoryTargetItem) => {
+    setHistoryTargetItem(target);
+    setIsHistoryModalOpen(true);
+  };
+
+  const handleCloseHistory = () => {
+    setIsHistoryModalOpen(false);
+    setHistoryTargetItem(null);
+  };
 
   const toggleExpandItem = (itemId: string) => {
     setExpandedItemIds((prev) => {
@@ -97,13 +282,20 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
         item.item_code.toLowerCase().includes(q) ||
         item.item_name.toLowerCase().includes(q);
 
+      const isSemi =
+        item.category === 'semi_finished' ||
+        item.category_label?.toLowerCase().includes('bán thành phẩm') ||
+        item.item_code.toLowerCase().includes('btp');
+
       const matchesType =
         selectedItemType === 'all' ||
-        item.item_type === selectedItemType ||
-        item.category === selectedItemType ||
+        (selectedItemType === 'semi_finished' && isSemi) ||
+        (selectedItemType === 'finished_good' && !isSemi && (item.category === 'finished_good' || item.item_type === 'product')) ||
+        (selectedItemType === 'product' && !isSemi && (item.item_type === 'product' || item.category === 'finished_good')) ||
         (selectedItemType === 'material' && (item.item_type === 'material' || ['raw_material', 'spare_part', 'chemical', 'packaging', 'consumable', 'fuel_energy', 'other'].includes(item.category || ''))) ||
-        (selectedItemType === 'product' && (item.item_type === 'product' || ['finished_good', 'semi_finished'].includes(item.category || ''))) ||
-        (selectedItemType === 'byproduct' && (item.item_type === 'byproduct' || item.category === 'by_product'));
+        (selectedItemType === 'byproduct' && (item.item_type === 'byproduct' || item.category === 'by_product' || item.category === 'byproduct')) ||
+        item.category === selectedItemType ||
+        item.item_type === selectedItemType;
 
       const matchesWarehouse =
         selectedWarehouseId === 'all' ||
@@ -179,7 +371,32 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
         };
         groupsMap.set(item.warehouse_id, group);
       }
-      group.items.push(item);
+
+      // Check duplicate items within same warehouse (e.g. Bán thành phẩm or different item_types)
+      const normCode = item.item_code && item.item_code !== '---' ? item.item_code.trim().toUpperCase() : item.item_id;
+      const existing = group.items.find((i) => {
+        const iCode = i.item_code && i.item_code !== '---' ? i.item_code.trim().toUpperCase() : i.item_id;
+        return iCode === normCode || i.item_id === item.item_id;
+      });
+
+      if (existing) {
+        existing.current_quantity += item.current_quantity;
+        existing.reserved_quantity += item.reserved_quantity;
+        existing.available_quantity = Math.max(0, existing.current_quantity - existing.reserved_quantity);
+        existing.total_inbound = (existing.total_inbound ?? 0) + (item.total_inbound ?? 0);
+        existing.total_outbound = (existing.total_outbound ?? 0) + (item.total_outbound ?? 0);
+        if (item.last_transaction_at && (!existing.last_transaction_at || item.last_transaction_at > existing.last_transaction_at)) {
+          existing.last_transaction_at = item.last_transaction_at;
+        }
+        if (item.category === 'semi_finished' || item.category_label?.toLowerCase().includes('bán thành phẩm')) {
+          existing.category = item.category;
+          existing.category_label = item.category_label;
+          existing.item_type = item.item_type;
+        }
+      } else {
+        group.items.push({ ...item });
+      }
+
       group.totalInbound += item.total_inbound ?? 0;
       group.totalOutbound += item.total_outbound ?? 0;
       group.totalCurrentQuantity += item.current_quantity ?? 0;
@@ -194,15 +411,39 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
     return Array.from(groupsMap.values());
   }, [balances, warehouses, selectedWarehouseId, search, selectedItemType]);
 
-  const [expandedWarehouseIds, setExpandedWarehouseIds] = useState<Set<string>>(() => new Set());
-  const [hasInitializedWhExpand, setHasInitializedWhExpand] = useState(false);
+  // Filter warehouse type (phân loại kho rõ rệt)
+  const [selectedWarehouseType, setSelectedWarehouseType] = useState<string>('all');
 
-  React.useEffect(() => {
-    if (!hasInitializedWhExpand && warehouseGroups.length > 0) {
-      setExpandedWarehouseIds(new Set(warehouseGroups.map((g) => g.warehouseId)));
-      setHasInitializedWhExpand(true);
+  // Filtered warehouse groups based on selected warehouse type
+  const filteredWarehouseGroups = React.useMemo(() => {
+    if (selectedWarehouseType === 'all') return warehouseGroups;
+    return warehouseGroups.filter((g) => g.warehouseType === selectedWarehouseType);
+  }, [warehouseGroups, selectedWarehouseType]);
+
+  // Count warehouses by type for quick filter pills
+  const warehouseTypeCounts = React.useMemo(() => {
+    const counts: Record<string, number> = { all: warehouseGroups.length };
+    warehouseGroups.forEach((g) => {
+      const type = g.warehouseType || 'other';
+      counts[type] = (counts[type] || 0) + 1;
+    });
+    return counts;
+  }, [warehouseGroups]);
+
+  // Default is ALWAYS COLLAPSED as requested by user ("view luôn ở dạng thu gọn trước")
+  const [expandedWarehouseIds, setExpandedWarehouseIds] = useState<Set<string>>(() => {
+    if (selectedWarehouseId && selectedWarehouseId !== 'all') {
+      return new Set([selectedWarehouseId]);
     }
-  }, [warehouseGroups, hasInitializedWhExpand]);
+    return new Set();
+  });
+
+  // Automatically expand only when a specific warehouse is filtered
+  React.useEffect(() => {
+    if (selectedWarehouseId && selectedWarehouseId !== 'all') {
+      setExpandedWarehouseIds(new Set([selectedWarehouseId]));
+    }
+  }, [selectedWarehouseId]);
 
   const toggleExpandWarehouse = (whId: string) => {
     setExpandedWarehouseIds((prev) => {
@@ -217,11 +458,128 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
   };
 
   const expandAllWarehouses = () => {
-    setExpandedWarehouseIds(new Set(warehouseGroups.map((g) => g.warehouseId)));
+    setExpandedWarehouseIds(new Set(filteredWarehouseGroups.map((g) => g.warehouseId)));
   };
 
   const collapseAllWarehouses = () => {
     setExpandedWarehouseIds(new Set());
+  };
+
+  // Group warehouses by warehouse classification (sắp xếp phân loại kho thành các phân loại kho)
+  interface WarehouseTypeSection {
+    typeKey: string;
+    label: string;
+    shortLabel: string;
+    badgeClass: string;
+    icon: React.ComponentType<{ className?: string }>;
+    order: number;
+    warehouses: WarehouseStockGroup[];
+    totalWarehouses: number;
+    totalItems: number;
+    totalCurrentQuantity: number;
+    totalAvailableQuantity: number;
+  }
+
+  const warehouseTypeSections = React.useMemo<WarehouseTypeSection[]>(() => {
+    const sectionsMap = new Map<string, WarehouseTypeSection>();
+
+    filteredWarehouseGroups.forEach((wh) => {
+      const typeKey = wh.warehouseType || 'other';
+      let section = sectionsMap.get(typeKey);
+      if (!section) {
+        const config = WAREHOUSE_TYPE_CONFIG[typeKey] || {
+          label: 'Kho Lưu Trữ Khác',
+          shortLabel: 'Kho khác',
+          badgeClass: 'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/30',
+          icon: Building2,
+          order: 99,
+        };
+        section = {
+          typeKey,
+          label: config.label,
+          shortLabel: config.shortLabel,
+          badgeClass: config.badgeClass,
+          icon: config.icon,
+          order: config.order,
+          warehouses: [],
+          totalWarehouses: 0,
+          totalItems: 0,
+          totalCurrentQuantity: 0,
+          totalAvailableQuantity: 0,
+        };
+        sectionsMap.set(typeKey, section);
+      }
+      section.warehouses.push(wh);
+      section.totalWarehouses += 1;
+      section.totalItems += wh.items.length;
+      section.totalCurrentQuantity += wh.totalCurrentQuantity;
+      section.totalAvailableQuantity += wh.totalAvailableQuantity;
+    });
+
+    return Array.from(sectionsMap.values()).sort((a, b) => a.order - b.order);
+  }, [filteredWarehouseGroups]);
+
+  // Group items by material classification (sắp xếp phân loại vật tư theo phân loại vật tư)
+  interface ItemCategorySection {
+    categoryKey: string;
+    label: string;
+    shortLabel: string;
+    badgeClass: string;
+    icon: React.ComponentType<{ className?: string }>;
+    order: number;
+    items: typeof filteredAggregatedItems;
+    totalItems: number;
+    totalCurrentQuantity: number;
+  }
+
+  const itemCategorySections = React.useMemo<ItemCategorySection[]>(() => {
+    const sectionsMap = new Map<string, ItemCategorySection>();
+
+    filteredAggregatedItems.forEach((item) => {
+      const catKey = getItemCategoryKey(item);
+      let section = sectionsMap.get(catKey);
+      if (!section) {
+        const config = MATERIAL_CATEGORY_CONFIG[catKey] || {
+          label: 'Vật Tư Khác & Phụ Trợ',
+          shortLabel: 'Vật tư khác',
+          badgeClass: 'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/30',
+          icon: Layers,
+          order: 99,
+        };
+        section = {
+          categoryKey: catKey,
+          label: config.label,
+          shortLabel: config.shortLabel,
+          badgeClass: config.badgeClass,
+          icon: config.icon,
+          order: config.order,
+          items: [],
+          totalItems: 0,
+          totalCurrentQuantity: 0,
+        };
+        sectionsMap.set(catKey, section);
+      }
+      section.items.push(item);
+      section.totalItems += 1;
+      section.totalCurrentQuantity += item.total_current_quantity;
+    });
+
+    return Array.from(sectionsMap.values()).sort((a, b) => a.order - b.order);
+  }, [filteredAggregatedItems]);
+
+  // State to expand/collapse material category sections in by_item view
+  const [collapsedCategoryKeys, setCollapsedCategoryKeys] = useState<Set<string>>(new Set());
+  const toggleCollapseCategory = (key: string) => {
+    setCollapsedCategoryKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const expandAllCategories = () => setCollapsedCategoryKeys(new Set());
+  const collapseAllCategories = () => {
+    setCollapsedCategoryKeys(new Set(itemCategorySections.map((s) => s.categoryKey)));
   };
 
   return (
@@ -295,8 +653,8 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
             className="rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           >
             <option value="all">Tất cả phân loại</option>
-            <optgroup label="📦 Vật tư & Phụ tùng">
-              <option value="raw_material">Nguyên vật liệu chính</option>
+            <optgroup label="📦 Danh mục Vật tư & NVL">
+              <option value="raw_material">Nguyên vật liệu</option>
               <option value="chemical">Hóa chất công nghiệp</option>
               <option value="spare_part">Phụ tùng cơ điện</option>
               <option value="packaging">Bao bì & Đóng gói</option>
@@ -304,15 +662,14 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
               <option value="fuel_energy">Nhiên liệu & Năng lượng</option>
               <option value="other">Vật tư phụ trợ</option>
             </optgroup>
-            <optgroup label="🏭 Sản xuất & Phụ phẩm">
-              <option value="finished_good">Thành phẩm sản xuất</option>
+            <optgroup label="🏭 Sản phẩm & Phụ phẩm">
+              <option value="finished_good">Thành phẩm</option>
               <option value="semi_finished">Bán thành phẩm</option>
               <option value="by_product">Phụ phẩm thu hồi</option>
             </optgroup>
             <optgroup label="🗂️ Nhóm tổng quát">
               <option value="material">Tất cả vật tư & phụ tùng</option>
-              <option value="product">Tất cả thành phẩm</option>
-              <option value="byproduct">Tất cả phụ phẩm</option>
+              <option value="product">Tất cả thành phẩm & phụ phẩm</option>
             </optgroup>
           </select>
 
@@ -363,11 +720,73 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
             </div>
           ) : (
             <div className="flex flex-col gap-3">
+              {/* Phân loại các kho rõ rệt: Filter pills by warehouse type */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedWarehouseType('all')}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap border transition-all',
+                    selectedWarehouseType === 'all'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                      : 'bg-background text-muted-foreground border-border hover:bg-muted/60 hover:text-foreground'
+                  )}
+                >
+                  <Building2 className="h-3.5 w-3.5" />
+                  <span>Tất cả kho</span>
+                  <span
+                    className={cn(
+                      'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
+                      selectedWarehouseType === 'all'
+                        ? 'bg-primary-foreground/20 text-primary-foreground'
+                        : 'bg-muted text-muted-foreground'
+                    )}
+                  >
+                    {warehouseTypeCounts['all'] || warehouseGroups.length}
+                  </span>
+                </button>
+
+                {Object.entries(WAREHOUSE_TYPE_CONFIG)
+                  .sort((a, b) => a[1].order - b[1].order)
+                  .map(([typeKey, config]) => {
+                    const count = warehouseTypeCounts[typeKey] || 0;
+                    if (count === 0 && selectedWarehouseType !== typeKey) return null;
+                    const IconComponent = config.icon;
+                    const isSelected = selectedWarehouseType === typeKey;
+                    return (
+                      <button
+                        key={typeKey}
+                        type="button"
+                        onClick={() => setSelectedWarehouseType(typeKey)}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap border transition-all',
+                          isSelected
+                            ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                            : 'bg-background text-muted-foreground border-border hover:bg-muted/60 hover:text-foreground'
+                        )}
+                      >
+                        <IconComponent className="h-3.5 w-3.5" />
+                        <span>{config.shortLabel}</span>
+                        <span
+                          className={cn(
+                            'ml-1 rounded-full px-1.5 py-0.2 text-[10px] font-bold',
+                            isSelected
+                              ? 'bg-primary-foreground/20 text-primary-foreground'
+                              : 'bg-muted text-muted-foreground'
+                          )}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
+
               {/* Expand / Collapse all controls & summary */}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-1">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span>
-                    Tổng số <span className="font-semibold text-foreground">{warehouseGroups.length}</span> kho lưu trữ
+                    Hiển thị <span className="font-semibold text-foreground">{filteredWarehouseGroups.length}</span> / {warehouseGroups.length} kho lưu trữ
                   </span>
                   <span>•</span>
                   <span>
@@ -396,78 +815,183 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
               </div>
 
               {/* Warehouse Groups */}
-              <div className="space-y-3">
-                {warehouseGroups.map((group) => {
-                  const isExpanded = expandedWarehouseIds.has(group.warehouseId);
-                  return (
-                    <div
-                      key={group.warehouseId}
-                      className="overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all"
-                    >
-                      {/* Warehouse Header Bar (Accordion Toggle) */}
+              {filteredWarehouseGroups.length === 0 ? (
+                <div className="flex min-h-[180px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-6 text-center">
+                  <Building2 className="h-8 w-8 text-muted-foreground/60" />
+                  <h4 className="mt-2 text-sm font-semibold text-foreground">Không có kho nào thuộc phân loại này</h4>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Không tìm thấy kho lưu trữ nào phù hợp với bộ lọc phân loại đang chọn.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedWarehouseType('all')}
+                    className="mt-3 text-xs"
+                  >
+                    Xem tất cả phân loại kho
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {warehouseTypeSections.map((section) => {
+                    const SectionIcon = section.icon;
+                    return (
+                      <div key={section.typeKey} className="space-y-3">
+                        {/* Section Header: Phân loại kho rõ rệt */}
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl bg-muted/40 px-3.5 py-2.5 border border-border">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <span
+                              className={cn(
+                                'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold',
+                                section.badgeClass
+                              )}
+                            >
+                              <SectionIcon className="h-3.5 w-3.5" />
+                              <span>{section.shortLabel}</span>
+                            </span>
+                            <span className="text-xs font-bold uppercase tracking-wide text-foreground">
+                              {section.label}
+                            </span>
+                            <span className="rounded-full bg-background border px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                              {section.totalWarehouses} kho
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
+                            <span>
+                              📦 <strong className="text-foreground">{section.totalItems}</strong> danh mục tồn
+                            </span>
+                            <span>•</span>
+                            <span>
+                              Tổng tồn:{' '}
+                              <strong
+                                className={
+                                  section.totalCurrentQuantity < 0
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-primary'
+                                }
+                              >
+                                {section.totalCurrentQuantity.toLocaleString('vi-VN')}
+                              </strong>
+                            </span>
+                            <span>•</span>
+                            <span>
+                              Khả dụng:{' '}
+                              <strong className="text-emerald-600 dark:text-emerald-400">
+                                {section.totalAvailableQuantity.toLocaleString('vi-VN')}
+                              </strong>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* List of Warehouses in this classification */}
+                        <div className="space-y-3 pl-0 sm:pl-2">
+                          {section.warehouses.map((group) => {
+                    const isExpanded = expandedWarehouseIds.has(group.warehouseId);
+                    const typeConfig =
+                      (group.warehouseType && WAREHOUSE_TYPE_CONFIG[group.warehouseType]) || {
+                        label: 'Kho lưu trữ',
+                        shortLabel: 'Kho chung',
+                        badgeClass: 'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/30',
+                        icon: Building2,
+                        order: 99,
+                      };
+                    const TypeIcon = typeConfig.icon;
+
+                    return (
                       <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => toggleExpandWarehouse(group.warehouseId)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            toggleExpandWarehouse(group.warehouseId);
-                          }
-                        }}
-                        className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none bg-card hover:bg-accent/30 transition-colors"
+                        key={group.warehouseId}
+                        className={cn(
+                          'overflow-hidden rounded-xl border bg-card shadow-xs transition-all',
+                          isExpanded
+                            ? 'border-primary/40 ring-1 ring-primary/20'
+                            : 'border-border hover:border-border/80'
+                        )}
                       >
-                        {/* Left: Chevron + Warehouse Name + Code + Badge + Count */}
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-background transition-transform duration-200 ${
-                              isExpanded ? 'rotate-180 text-primary border-primary/40' : 'text-muted-foreground'
-                            }`}
-                          >
-                            <ChevronDown className="h-4 w-4" />
+                        {/* Warehouse Header Bar (Accordion Toggle - Default Collapsed) */}
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleExpandWarehouse(group.warehouseId)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggleExpandWarehouse(group.warehouseId);
+                            }
+                          }}
+                          className={cn(
+                            'flex flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none transition-colors',
+                            isExpanded ? 'bg-muted/30' : 'bg-card hover:bg-muted/20'
+                          )}
+                        >
+                          {/* Left: Chevron + Type Badge + Warehouse Name & Code */}
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={cn(
+                                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-transform duration-200',
+                                isExpanded
+                                  ? 'rotate-180 text-primary border-primary/40 bg-primary/10'
+                                  : 'text-muted-foreground border-border bg-background'
+                              )}
+                              title={isExpanded ? 'Thu gọn kho này' : 'Mở rộng chi tiết kho này'}
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Phân loại kho rõ rệt: Type Badge with Icon */}
+                              <span
+                                className={cn(
+                                  'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-semibold',
+                                  typeConfig.badgeClass
+                                )}
+                              >
+                                <TypeIcon className="h-3 w-3" />
+                                <span>{typeConfig.shortLabel}</span>
+                              </span>
+
+                              {/* Warehouse Code & Name */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-xs font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                                  {group.warehouseCode || 'KHO'}
+                                </span>
+                                <span className="text-sm font-bold text-foreground">
+                                  {group.warehouseName}
+                                </span>
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Building2 className="h-4 w-4 text-primary shrink-0" />
-                            <span className="text-sm font-bold text-foreground">{group.warehouseName}</span>
-                            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border/50">
-                              {group.warehouseCode}
-                            </span>
-                            {group.warehouseType && (
-                              <WarehouseTypeBadge type={group.warehouseType} />
-                            )}
-                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-[11px] font-semibold">
-                              <Boxes className="h-3 w-3" />
-                              {group.items.length} mặt hàng
-                            </span>
+                          {/* Right: Tóm tắt thông số khi thu gọn */}
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-background/80 px-2.5 py-1 text-muted-foreground">
+                              <span>📦</span>
+                              <span className="font-semibold text-foreground">{group.items.length}</span>
+                              <span>mặt hàng</span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/80 px-2.5 py-1">
+                              <span className="text-muted-foreground">Tồn:</span>
+                              <span
+                                className={cn(
+                                  'font-bold',
+                                  group.totalCurrentQuantity < 0
+                                    ? 'text-rose-600 dark:text-rose-400'
+                                    : 'text-primary'
+                                )}
+                              >
+                                {group.totalCurrentQuantity.toLocaleString('vi-VN')}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/80 px-2.5 py-1">
+                              <span className="text-muted-foreground">Khả dụng:</span>
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                {group.totalAvailableQuantity.toLocaleString('vi-VN')}
+                              </span>
+                            </div>
                           </div>
                         </div>
-
-                        {/* Right: Aggregated Totals in Header */}
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
-                          <div className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-400 font-medium">
-                            <ArrowDownLeft className="h-3 w-3" />
-                            <span>Nhập:</span>
-                            <span className="font-bold">{group.totalInbound.toLocaleString('vi-VN')}</span>
-                          </div>
-
-                          <div className="flex items-center gap-1 rounded-lg bg-rose-500/10 px-2.5 py-1 text-rose-700 dark:text-rose-400 font-medium">
-                            <ArrowUpRight className="h-3 w-3" />
-                            <span>Xuất:</span>
-                            <span className="font-bold">{group.totalOutbound.toLocaleString('vi-VN')}</span>
-                          </div>
-
-                          <div className="flex items-center gap-1 rounded-lg bg-muted px-2.5 py-1 text-foreground font-semibold">
-                            <span className="text-muted-foreground">Tồn:</span>
-                            <span className="font-bold text-primary">{group.totalCurrentQuantity.toLocaleString('vi-VN')}</span>
-                          </div>
-
-                          <div className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-emerald-700 dark:text-emerald-400 font-semibold">
-                            <span className="text-emerald-700/80 dark:text-emerald-400/80">Khả dụng:</span>
-                            <span>{group.totalAvailableQuantity.toLocaleString('vi-VN')}</span>
-                          </div>
-                        </div>
-                      </div>
 
                       {/* Expanded Warehouse Table */}
                       {isExpanded && (
@@ -481,25 +1005,9 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                               <table className="w-full text-left border-collapse text-xs">
                                 <thead>
                                   <tr className="border-b border-border bg-muted/40 font-semibold text-muted-foreground">
-                                    <th className="py-2.5 px-4">Phân loại</th>
                                     <th className="py-2.5 px-4">Mã mặt hàng</th>
                                     <th className="py-2.5 px-4">Tên hàng / Vật tư</th>
-                                    <th className="py-2.5 px-4 text-right text-emerald-700 dark:text-emerald-400">
-                                      <span className="flex items-center justify-end gap-1">
-                                        <ArrowDownLeft className="h-3 w-3" />
-                                        Tổng Nhập (+)
-                                      </span>
-                                    </th>
-                                    <th className="py-2.5 px-4 text-right text-rose-700 dark:text-rose-400">
-                                      <span className="flex items-center justify-end gap-1">
-                                        <ArrowUpRight className="h-3 w-3" />
-                                        Tổng Xuất (-)
-                                      </span>
-                                    </th>
-                                    <th className="py-2.5 px-4 text-right font-bold text-foreground">Tồn thực tế (=)</th>
-                                    <th className="py-2.5 px-4 text-right">Khả dụng</th>
-                                    <th className="py-2.5 px-4">Đơn vị</th>
-                                    <th className="py-2.5 px-4">Cập nhật cuối</th>
+                                    <th className="py-2.5 px-4 text-right font-bold text-foreground">Tồn kho</th>
                                     <th className="py-2.5 px-4 text-right">Thao tác</th>
                                   </tr>
                                 </thead>
@@ -507,51 +1015,79 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                                   {group.items.map((item, idx) => (
                                     <tr
                                       key={`${item.warehouse_id}-${item.item_id}-${idx}`}
-                                      className="hover:bg-accent/30 transition-colors"
+                                      onClick={() =>
+                                        handleOpenHistory({
+                                          itemId: item.item_id,
+                                          itemCode: item.item_code || '—',
+                                          itemName: item.item_name || 'Chưa đặt tên',
+                                          unitOfMeasure: item.unit_of_measure,
+                                          itemType: item.item_type,
+                                          category: item.category,
+                                          categoryLabel: item.category_label,
+                                          warehouseId: item.warehouse_id,
+                                          warehouseName: group.warehouseName,
+                                          warehouseCode: group.warehouseCode,
+                                        })
+                                      }
+                                      className="hover:bg-accent/40 cursor-pointer transition-colors"
+                                      title="Nhấp để xem chi tiết lịch sử nhập xuất kho"
                                     >
-                                      <td className="py-3 px-4 whitespace-nowrap">
-                                        <ItemTypeBadge
-                                          type={item.item_type}
-                                          category={item.category}
-                                          categoryLabel={item.category_label}
-                                        />
-                                      </td>
                                       <td className="py-3 px-4 font-mono font-bold whitespace-nowrap text-foreground">
                                         {item.item_code}
                                       </td>
-                                      <td className="py-3 px-4 font-medium text-foreground">{item.item_name}</td>
-                                      <td className="py-3 px-4 text-right font-medium text-emerald-600 dark:text-emerald-400">
-                                        {(item.total_inbound ?? 0).toLocaleString('vi-VN')}
+                                      <td className="py-3 px-4 font-medium text-foreground">
+                                        <span className="hover:underline hover:text-primary">
+                                          {item.item_name}
+                                        </span>
                                       </td>
-                                      <td className="py-3 px-4 text-right font-medium text-rose-600 dark:text-rose-400">
-                                        {(item.total_outbound ?? 0).toLocaleString('vi-VN')}
-                                      </td>
-                                      <td className="py-3 px-4 text-right font-bold text-foreground bg-muted/20">
+                                      <td className={`py-3 px-4 text-right font-bold ${item.current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : item.current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
                                         {item.current_quantity.toLocaleString('vi-VN')}
-                                      </td>
-                                      <td className="py-3 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                        {item.available_quantity.toLocaleString('vi-VN')}
-                                      </td>
-                                      <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                                        {item.unit_of_measure}
-                                      </td>
-                                      <td className="py-3 px-4 text-muted-foreground whitespace-nowrap">
-                                        {item.last_transaction_at
-                                          ? new Date(item.last_transaction_at).toLocaleDateString('vi-VN')
-                                          : '—'}
+                                        {item.unit_of_measure && (
+                                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                            {item.unit_of_measure}
+                                          </span>
+                                        )}
                                       </td>
                                       <td className="py-3 px-4 text-right whitespace-nowrap">
-                                        {canTransact && (
+                                        <div
+                                          className="flex items-center justify-end gap-1.5"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
                                           <Button
-                                            variant="outline"
+                                            variant="ghost"
                                             size="sm"
-                                            onClick={() => onAdjustStock(item)}
-                                            className="h-7 gap-1 px-2 text-[11px]"
+                                            onClick={() =>
+                                              handleOpenHistory({
+                                                itemId: item.item_id,
+                                                itemCode: item.item_code || '—',
+                                                itemName: item.item_name || 'Chưa đặt tên',
+                                                unitOfMeasure: item.unit_of_measure,
+                                                itemType: item.item_type,
+                                                category: item.category,
+                                                categoryLabel: item.category_label,
+                                                warehouseId: item.warehouse_id,
+                                                warehouseName: group.warehouseName,
+                                                warehouseCode: group.warehouseCode,
+                                              })
+                                            }
+                                            className="h-7 gap-1 px-2 text-[11px] text-primary hover:text-primary hover:bg-primary/10"
+                                            title="Xem lịch sử nhập xuất của mặt hàng này"
                                           >
-                                            <Sliders className="h-3 w-3 text-primary" />
-                                            Kiểm kê
+                                            <History className="h-3 w-3" />
+                                            Lịch sử
                                           </Button>
-                                        )}
+                                          {canTransact && (
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              onClick={() => onAdjustStock(item)}
+                                              className="h-7 gap-1 px-2 text-[11px]"
+                                            >
+                                              <Sliders className="h-3 w-3 text-primary" />
+                                              Kiểm kê
+                                            </Button>
+                                          )}
+                                        </div>
                                       </td>
                                     </tr>
                                   ))}
@@ -565,6 +1101,11 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
                   );
                 })}
               </div>
+            </div>
+          );
+        })}
+      </div>
+      )}
 
               {/* Pagination */}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-1">
@@ -636,203 +1177,318 @@ export const StockBalanceTable: React.FC<StockBalanceTableProps> = ({
               </p>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
-              <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/40 font-semibold text-muted-foreground">
-                        <th className="py-3 px-3 w-10 text-center"></th>
-                        <th className="py-3 px-4">Phân loại</th>
-                        <th className="py-3 px-4">Mã mặt hàng</th>
-                        <th className="py-3 px-4">Tên hàng / Vật tư</th>
-                        <th className="py-3 px-4 text-right text-emerald-700 dark:text-emerald-400">
-                          <span className="flex items-center justify-end gap-1">
-                            <ArrowDownLeft className="h-3 w-3" />
-                            Tổng Nhập Cty (+)
-                          </span>
-                        </th>
-                        <th className="py-3 px-4 text-right text-rose-700 dark:text-rose-400">
-                          <span className="flex items-center justify-end gap-1">
-                            <ArrowUpRight className="h-3 w-3" />
-                            Tổng Xuất Cty (-)
-                          </span>
-                        </th>
-                        <th className="py-3 px-4 text-right font-bold text-foreground">Tổng Tồn Thực Tế (=)</th>
-                        <th className="py-3 px-4 text-right">Tổng Khả Dụng</th>
-                        <th className="py-3 px-4">Đơn vị</th>
-                        <th className="py-3 px-4 text-center">Phân bổ kho</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/60">
-                      {filteredAggregatedItems.map((item) => {
-                        const isExpanded = expandedItemIds.has(item.item_id);
-                        return (
-                          <React.Fragment key={item.item_id}>
-                            <tr
-                              onClick={() => toggleExpandItem(item.item_id)}
-                              className={`cursor-pointer transition-colors ${
-                                isExpanded ? 'bg-primary/5 font-medium' : 'hover:bg-accent/30'
-                              }`}
-                            >
-                              <td className="py-3.5 px-3 text-center">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0 text-muted-foreground"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleExpandItem(item.item_id);
-                                  }}
-                                >
-                                  <ChevronDown
-                                    className={`h-4 w-4 transition-transform duration-200 ${
-                                      isExpanded ? 'rotate-180 text-primary' : ''
-                                    }`}
-                                  />
-                                </Button>
-                              </td>
-                              <td className="py-3.5 px-4 whitespace-nowrap">
-                                <ItemTypeBadge
-                                  type={item.item_type}
-                                  category={item.category}
-                                  categoryLabel={item.category_label}
-                                />
-                              </td>
-                              <td className="py-3.5 px-4 font-mono font-bold whitespace-nowrap">{item.item_code}</td>
-                              <td className="py-3.5 px-4 font-medium text-foreground">{item.item_name}</td>
-                              <td className="py-3.5 px-4 text-right font-medium text-emerald-600 dark:text-emerald-400">
-                                {item.total_inbound.toLocaleString('vi-VN')}
-                              </td>
-                              <td className="py-3.5 px-4 text-right font-medium text-rose-600 dark:text-rose-400">
-                                {item.total_outbound.toLocaleString('vi-VN')}
-                              </td>
-                              <td className="py-3.5 px-4 text-right font-bold text-foreground bg-muted/20">
-                                {item.total_current_quantity.toLocaleString('vi-VN')}
-                              </td>
-                              <td className="py-3.5 px-4 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                {item.total_available_quantity.toLocaleString('vi-VN')}
-                              </td>
-                              <td className="py-3.5 px-4 text-muted-foreground whitespace-nowrap">{item.unit_of_measure}</td>
-                              <td className="py-3.5 px-4 text-center">
-                                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-semibold text-foreground">
-                                  <Building2 className="h-3 w-3 text-muted-foreground" />
-                                  {item.warehouses.length} kho
-                                </span>
-                              </td>
-                            </tr>
-
-                            {/* Sub-row: Chi tiết số dư theo từng kho */}
-                            {isExpanded && (
-                              <tr className="bg-muted/15">
-                                <td colSpan={10} className="p-0">
-                                  <div className="border-t border-border/80 p-4 pl-12">
-                                    <div className="mb-2 flex items-center justify-between">
-                                      <h4 className="text-[12px] font-semibold text-foreground flex items-center gap-1.5">
-                                        <Building2 className="h-3.5 w-3.5 text-primary" />
-                                        Chi tiết phân bổ tồn kho của vật tư: {item.item_name} ({item.item_code})
-                                      </h4>
-                                      <span className="text-[11px] text-muted-foreground">
-                                        Tổng tồn = Tổng nhập - Tổng xuất theo từng kho
-                                      </span>
-                                    </div>
-                                    <div className="overflow-hidden rounded-lg border border-border bg-background shadow-xs">
-                                      <table className="w-full text-left border-collapse text-xs">
-                                        <thead>
-                                          <tr className="border-b border-border bg-muted/30 font-medium text-muted-foreground text-[11px]">
-                                            <th className="py-2.5 px-3">Kho lưu trữ</th>
-                                            <th className="py-2.5 px-3 text-right text-emerald-700 dark:text-emerald-400">Tổng Nhập (+)</th>
-                                            <th className="py-2.5 px-3 text-right text-rose-700 dark:text-rose-400">Tổng Xuất (-)</th>
-                                            <th className="py-2.5 px-3 text-right font-bold text-foreground">Tồn tại kho (=)</th>
-                                            <th className="py-2.5 px-3 text-right">Khả dụng</th>
-                                            <th className="py-2.5 px-3">Cập nhật cuối</th>
-                                            <th className="py-2.5 px-3 text-right">Thao tác</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-border/40">
-                                          {item.warehouses.map((wh) => (
-                                            <tr key={wh.warehouse_id} className="hover:bg-accent/20">
-                                              <td className="py-2.5 px-3 font-medium text-foreground">
-                                                {wh.warehouse_name}
-                                                <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
-                                                  ({wh.warehouse_code})
-                                                </span>
-                                              </td>
-                                              <td className="py-2.5 px-3 text-right text-emerald-600 dark:text-emerald-400 font-medium">
-                                                {(wh.total_inbound ?? 0).toLocaleString('vi-VN')}
-                                              </td>
-                                              <td className="py-2.5 px-3 text-right text-rose-600 dark:text-rose-400 font-medium">
-                                                {(wh.total_outbound ?? 0).toLocaleString('vi-VN')}
-                                              </td>
-                                              <td className="py-2.5 px-3 text-right font-bold text-foreground">
-                                                {wh.current_quantity.toLocaleString('vi-VN')}
-                                              </td>
-                                              <td className="py-2.5 px-3 text-right font-bold text-emerald-600 dark:text-emerald-400">
-                                                {wh.available_quantity.toLocaleString('vi-VN')}
-                                              </td>
-                                              <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap text-[11px]">
-                                                {wh.last_transaction_at
-                                                  ? new Date(wh.last_transaction_at).toLocaleDateString('vi-VN')
-                                                  : 'Chưa giao dịch'}
-                                              </td>
-                                              <td className="py-2.5 px-3 text-right whitespace-nowrap">
-                                                {canTransact && (
-                                                  <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                      onAdjustStock({
-                                                        id: `${wh.warehouse_id}-${item.item_id}`,
-                                                        warehouse_id: wh.warehouse_id,
-                                                        warehouse_code: wh.warehouse_code,
-                                                        warehouse_name: wh.warehouse_name,
-                                                        item_id: item.item_id,
-                                                        item_code: item.item_code,
-                                                        item_name: item.item_name,
-                                                        item_type: item.item_type,
-                                                        category: item.category,
-                                                        category_label: item.category_label,
-                                                        current_quantity: wh.current_quantity,
-                                                        reserved_quantity: wh.reserved_quantity,
-                                                        available_quantity: wh.available_quantity,
-                                                        unit_of_measure: item.unit_of_measure,
-                                                        last_transaction_at: wh.last_transaction_at || new Date().toISOString(),
-                                                        total_inbound: wh.total_inbound,
-                                                        total_outbound: wh.total_outbound,
-                                                      })
-                                                    }
-                                                    className="h-6 gap-1 px-2 text-[11px]"
-                                                  >
-                                                    <Sliders className="h-3 w-3 text-primary" />
-                                                    Kiểm kê kho này
-                                                  </Button>
-                                                )}
-                                              </td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+            <div className="flex flex-col gap-4">
+              {/* Category Controls & Summary */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-1">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>
+                    Phân loại: <span className="font-semibold text-foreground">{itemCategorySections.length}</span> nhóm vật tư
+                  </span>
+                  <span>•</span>
+                  <span>
+                    Tổng <span className="font-semibold text-foreground">{filteredAggregatedItems.length}</span> mặt hàng trong toàn hệ thống
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={expandAllCategories}
+                    className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Mở rộng tất cả phân loại
+                  </Button>
+                  <span className="text-muted-foreground/40">|</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={collapseAllCategories}
+                    className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Thu gọn tất cả phân loại
+                  </Button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
-                <span>
-                  Tổng số <span className="font-semibold text-foreground">{filteredAggregatedItems.length}</span> mặt hàng trong toàn hệ thống
-                </span>
+              {/* Material Category Sections */}
+              <div className="space-y-4">
+                {itemCategorySections.map((sec) => {
+                  const isCollapsed = collapsedCategoryKeys.has(sec.categoryKey);
+                  const CatIcon = sec.icon;
+
+                  return (
+                    <div
+                      key={sec.categoryKey}
+                      className="overflow-hidden rounded-xl border border-border bg-card shadow-xs transition-all"
+                    >
+                      {/* Material Category Header Bar (Accordion Toggle) */}
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleCollapseCategory(sec.categoryKey)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleCollapseCategory(sec.categoryKey);
+                          }
+                        }}
+                        className={cn(
+                          'flex flex-col gap-2.5 p-3.5 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none transition-colors',
+                          !isCollapsed ? 'bg-muted/30' : 'bg-card hover:bg-muted/20'
+                        )}
+                      >
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <div
+                            className={cn(
+                              'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-transform duration-200',
+                              !isCollapsed
+                                ? 'rotate-180 text-primary border-primary/40 bg-primary/10'
+                                : 'text-muted-foreground border-border bg-background'
+                            )}
+                            title={!isCollapsed ? 'Thu gọn phân loại này' : 'Mở rộng phân loại này'}
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </div>
+
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-semibold',
+                              sec.badgeClass
+                            )}
+                          >
+                            <CatIcon className="h-3 w-3" />
+                            <span>{sec.shortLabel}</span>
+                          </span>
+
+                          <span className="text-xs font-bold uppercase tracking-wide text-foreground">
+                            {sec.label}
+                          </span>
+
+                          <span className="rounded-full bg-background border px-2 py-0.2 text-[10px] font-bold text-muted-foreground">
+                            {sec.totalItems} mặt hàng
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 text-xs">
+                          <div className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/80 px-2.5 py-1">
+                            <span className="text-muted-foreground">Tổng tồn nhóm:</span>
+                            <span
+                              className={cn(
+                                'font-bold',
+                                sec.totalCurrentQuantity < 0
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : 'text-primary'
+                              )}
+                            >
+                              {sec.totalCurrentQuantity.toLocaleString('vi-VN')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Items table inside this category */}
+                      {!isCollapsed && (
+                        <div className="border-t border-border overflow-x-auto">
+                          <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                              <tr className="border-b border-border bg-muted/40 font-semibold text-muted-foreground">
+                                <th className="py-2.5 px-3 w-10 text-center"></th>
+                                <th className="py-2.5 px-4">Mã mặt hàng</th>
+                                <th className="py-2.5 px-4">Tên hàng / Vật tư</th>
+                                <th className="py-2.5 px-4 text-right font-bold text-foreground">Tồn kho</th>
+                                <th className="py-2.5 px-4 text-right">Thao tác</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/60">
+                              {sec.items.map((item) => {
+                                const isExpanded = expandedItemIds.has(item.item_id);
+                                return (
+                                  <React.Fragment key={item.item_id}>
+                                    <tr
+                                      onClick={() => toggleExpandItem(item.item_id)}
+                                      className={`cursor-pointer transition-colors ${
+                                        isExpanded ? 'bg-primary/5 font-medium' : 'hover:bg-accent/30'
+                                      }`}
+                                    >
+                                      <td className="py-3.5 px-3 text-center">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0 text-muted-foreground"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleExpandItem(item.item_id);
+                                          }}
+                                        >
+                                          <ChevronDown
+                                            className={`h-4 w-4 transition-transform duration-200 ${
+                                              isExpanded ? 'rotate-180 text-primary' : ''
+                                            }`}
+                                          />
+                                        </Button>
+                                      </td>
+                                      <td className="py-3.5 px-4 font-mono font-bold whitespace-nowrap">{item.item_code}</td>
+                                      <td className="py-3.5 px-4 font-medium text-foreground">{item.item_name}</td>
+                                      <td className={`py-3.5 px-4 text-right font-bold ${item.total_current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : item.total_current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
+                                        {item.total_current_quantity.toLocaleString('vi-VN')}
+                                        {item.unit_of_measure && (
+                                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                            {item.unit_of_measure}
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="py-3.5 px-4 text-right">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenHistory({
+                                              itemId: item.item_id,
+                                              itemCode: item.item_code,
+                                              itemName: item.item_name,
+                                              unitOfMeasure: item.unit_of_measure,
+                                              itemType: item.item_type,
+                                              category: item.category,
+                                              categoryLabel: item.category_label,
+                                            });
+                                          }}
+                                          className="h-7 gap-1 px-2 text-[11px] text-primary hover:text-primary hover:bg-primary/10"
+                                          title="Xem toàn bộ lịch sử giao dịch toàn công ty của vật tư này"
+                                        >
+                                          <History className="h-3 w-3" />
+                                          Lịch sử
+                                        </Button>
+                                      </td>
+                                    </tr>
+
+                                    {/* Sub-row: Chi tiết số dư theo từng kho */}
+                                    {isExpanded && (
+                                      <tr className="bg-muted/15">
+                                        <td colSpan={5} className="p-0">
+                                          <div className="border-t border-border/80 p-4 pl-12">
+                                            <div className="mb-2 flex items-center justify-between">
+                                              <h4 className="text-[12px] font-semibold text-foreground flex items-center gap-1.5">
+                                                <Building2 className="h-3.5 w-3.5 text-primary" />
+                                                Chi tiết phân bổ tồn kho của vật tư: {item.item_name} ({item.item_code})
+                                              </h4>
+                                            </div>
+                                            <div className="overflow-hidden rounded-lg border border-border bg-background shadow-xs">
+                                              <table className="w-full text-left border-collapse text-xs">
+                                                <thead>
+                                                  <tr className="border-b border-border bg-muted/30 font-medium text-muted-foreground text-[11px]">
+                                                    <th className="py-2.5 px-3">Kho lưu trữ</th>
+                                                    <th className="py-2.5 px-3 text-right font-bold text-foreground">Tồn tại kho</th>
+                                                    <th className="py-2.5 px-3 text-right">Thao tác</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-border/40">
+                                                  {item.warehouses.map((wh) => (
+                                                    <tr key={wh.warehouse_id} className="hover:bg-accent/20">
+                                                      <td className="py-2.5 px-3 font-medium text-foreground">
+                                                        {wh.warehouse_name}
+                                                        <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">
+                                                          ({wh.warehouse_code})
+                                                        </span>
+                                                      </td>
+                                                      <td className={`py-2.5 px-3 text-right font-bold ${wh.current_quantity < 0 ? 'text-rose-600 dark:text-rose-400' : wh.current_quantity === 0 ? 'text-muted-foreground' : 'text-foreground'}`}>
+                                                        {wh.current_quantity.toLocaleString('vi-VN')}
+                                                        {item.unit_of_measure && (
+                                                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                                            {item.unit_of_measure}
+                                                          </span>
+                                                        )}
+                                                      </td>
+                                                      <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                                        <div className="flex items-center justify-end gap-1">
+                                                          <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() =>
+                                                              handleOpenHistory({
+                                                                itemId: item.item_id,
+                                                                itemCode: item.item_code,
+                                                                itemName: item.item_name,
+                                                                unitOfMeasure: item.unit_of_measure,
+                                                                itemType: item.item_type,
+                                                                category: item.category,
+                                                                categoryLabel: item.category_label,
+                                                                warehouseId: wh.warehouse_id,
+                                                                warehouseName: wh.warehouse_name,
+                                                                warehouseCode: wh.warehouse_code,
+                                                                })
+                                                            }
+                                                            className="h-6 gap-1 px-2 text-[11px] text-primary hover:text-primary hover:bg-primary/10"
+                                                            title="Xem lịch sử nhập xuất tại kho này"
+                                                          >
+                                                            <History className="h-3 w-3" />
+                                                            Lịch sử
+                                                          </Button>
+                                                          {canTransact && (
+                                                            <Button
+                                                              variant="outline"
+                                                              size="sm"
+                                                              onClick={() =>
+                                                                onAdjustStock({
+                                                                  id: `${wh.warehouse_id}-${item.item_id}`,
+                                                                  warehouse_id: wh.warehouse_id,
+                                                                  warehouse_code: wh.warehouse_code,
+                                                                  warehouse_name: wh.warehouse_name,
+                                                                  item_id: item.item_id,
+                                                                  item_code: item.item_code,
+                                                                  item_name: item.item_name,
+                                                                  item_type: item.item_type,
+                                                                  category: item.category,
+                                                                  category_label: item.category_label,
+                                                                  current_quantity: wh.current_quantity,
+                                                                  reserved_quantity: wh.reserved_quantity,
+                                                                  available_quantity: wh.available_quantity,
+                                                                  unit_of_measure: item.unit_of_measure,
+                                                                  last_transaction_at: wh.last_transaction_at || new Date().toISOString(),
+                                                                  total_inbound: wh.total_inbound,
+                                                                  total_outbound: wh.total_outbound,
+                                                                })
+                                                              }
+                                                              className="h-6 gap-1 px-2 text-[11px]"
+                                                            >
+                                                              <Sliders className="h-3 w-3 text-primary" />
+                                                              Kiểm kê
+                                                            </Button>
+                                                          )}
+                                                        </div>
+                                                      </td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
         </>
+      )}
+
+      {/* Modal Lịch sử nhập xuất kho */}
+      {isHistoryModalOpen && historyTargetItem && (
+        <StockHistoryModal
+          isOpen={isHistoryModalOpen}
+          item={historyTargetItem}
+          onClose={handleCloseHistory}
+        />
       )}
     </div>
   );

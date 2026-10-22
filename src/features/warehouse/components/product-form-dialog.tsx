@@ -33,6 +33,7 @@ export const ProductFormDialog: React.FC<ProductFormDialogProps> = ({
       name: '',
       product_type: 'finished_good',
       unit_of_measure: 'Tấn',
+      specifications: '',
       base_sales_price: 0,
       standard_cycle_time_mins: 0,
       standard_labor_cost: 0,
@@ -47,6 +48,7 @@ export const ProductFormDialog: React.FC<ProductFormDialogProps> = ({
         name: productToEdit.name,
         product_type: productToEdit.product_type,
         unit_of_measure: productToEdit.unit_of_measure,
+        specifications: productToEdit.specifications || '',
         base_sales_price: productToEdit.base_sales_price,
         standard_cycle_time_mins: productToEdit.standard_cycle_time_mins,
         standard_labor_cost: productToEdit.standard_labor_cost,
@@ -58,6 +60,7 @@ export const ProductFormDialog: React.FC<ProductFormDialogProps> = ({
         name: '',
         product_type: 'finished_good',
         unit_of_measure: 'Tấn',
+        specifications: '',
         base_sales_price: 0,
         standard_cycle_time_mins: 0,
         standard_labor_cost: 0,
@@ -156,11 +159,28 @@ export const ProductFormDialog: React.FC<ProductFormDialogProps> = ({
             <input
               id="product-name"
               type="text"
-              placeholder="VD: Alumina cát loại 1 (Al2O3 >= 98.6%) hoặc Nhôm Hydroxit Al(OH)3"
+              placeholder="VD: Cát thủy tinh ít sắt đóng bao (S80-DB) hoặc Cát siêu mịn FSAP"
               {...register('name')}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden"
             />
             {errors.name && <p className="mt-1 text-[11px] text-destructive">{errors.name.message}</p>}
+          </div>
+
+          {/* Row 2.5: Specifications */}
+          <div>
+            <label htmlFor="product-specifications" className="mb-1 block font-semibold text-foreground">
+              Thông số kỹ thuật / Tiêu chuẩn chất lượng
+            </label>
+            <textarea
+              id="product-specifications"
+              rows={2}
+              placeholder="VD: Hàm lượng Fe2O3 ≤ 80ppm; SiO2 ≥ 99.5%; Độ ẩm ≤ 0.5%; Cỡ hạt: 0.1 - 0.4mm"
+              {...register('specifications')}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden resize-none"
+            />
+            {errors.specifications && (
+              <p className="mt-1 text-[11px] text-destructive">{errors.specifications.message}</p>
+            )}
           </div>
 
           {/* Row 3: Unit and Status */}

@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { Calendar, Clock } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { PageContainer } from '@/components/layout/page-container';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { cn } from '@/lib/utils';
 
 // Types
 import type {
   ProductionShift,
   ProductionShiftFilterParams,
   ProductionMetricsFilterParams,
+  PatrolFilterParams,
+  PatrolArea,
+  PatrolAreaMachineItem,
+  QuickIncidentFormValues,
+  PatrolAreaFormValues,
 } from '../types';
 
 // Hooks
@@ -21,24 +24,37 @@ import {
   useUpdateProductionShift,
   useDeleteProductionShift,
 } from '../hooks/use-production-shifts';
+import {
+  usePatrolAreas,
+  usePatrolLogs,
+  useConfirmNormalInspection,
+  useReportPatrolIncident,
+  useAvailableMachines,
+  useCreatePatrolArea,
+  useUpdatePatrolArea,
+} from '../hooks/use-production-patrols';
 
 // Components
-import { ProductionMetricCards } from '../components/production-metric-cards';
-import { ProductionMetricFilterBar } from '../components/production-metric-filter-bar';
-import { ProductionConsumptionNormsBar } from '../components/production-consumption-norms-bar';
 import { ProductionAnnualPlanner } from '../components/production-annual-planner';
 import { ProductionShiftFilterBar } from '../components/production-shift-filter-bar';
 import { ProductionShiftTable } from '../components/production-shift-table';
 import { ProductionShiftFormDialog } from '../components/production-shift-form-dialog';
 import { ProductionShiftDetailModal } from '../components/production-shift-detail-modal';
 import { ProductionShiftDeleteDialog } from '../components/production-shift-delete-dialog';
+import { BatchShiftWarehouseDialog } from '../components/batch-shift-warehouse-dialog';
+import { IncidentAnalyticsTab } from '../components/incident-analytics-tab';
+import { ProductionPatrolHistoryTable } from '../components/production-patrol-history-table';
+import { ProductionQrScannerModal } from '../components/production-qr-scanner-modal';
+import { ProductionAreaChecklistModal } from '../components/production-area-checklist-modal';
+import { ProductionQuickIncidentDialog } from '../components/production-quick-incident-dialog';
+import { ProductionAreaQrPrintDialog } from '../components/production-area-qr-print-dialog';
+import { ProductionPatrolAreaDialog } from '../components/production-patrol-area-dialog';
 
-type ProductionTab = 'annual-plan' | 'shifts';
+type ProductionTab = 'annual-plan' | 'shifts' | 'incidents' | 'patrols';
 
 export const ProductionPage: React.FC = () => {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { hasRole, hasPermission } = useAuth();
+  const { user, hasRole, hasPermission } = useAuth();
 
   // Permission evaluation
   const canManagePlans =
@@ -65,9 +81,18 @@ export const ProductionPage: React.FC = () => {
     hasRole('plant_manager') ||
     hasPermission('production.shift.delete');
 
+  const canBatchSyncWarehouse =
+    hasRole('admin') ||
+    hasRole('plant_manager') ||
+    hasRole('production_lead') ||
+    hasPermission('production.plan.approve') ||
+    hasPermission('inventory.receipt.create');
+
   // Determine active tab from URL path
   const getTabFromPath = (path: string): ProductionTab => {
     if (path.includes('/production/shifts')) return 'shifts';
+    if (path.includes('/production/patrols')) return 'patrols';
+    if (path.includes('/production/incidents')) return 'incidents';
     return 'annual-plan';
   };
 
@@ -79,23 +104,18 @@ export const ProductionPage: React.FC = () => {
     setActiveTab(getTabFromPath(location.pathname));
   }, [location.pathname]);
 
-  const handleTabChange = (tab: ProductionTab) => {
-    setActiveTab(tab);
-    navigate(`/production/${tab}`);
-  };
-
   // Shared master data
   const { data: lines = [] } = useProductionLines();
 
-  // Metrics filters state (lineId, months, years)
+  // Metrics state (for shift recovery rate and productivity targets)
   const now = new Date();
-  const [metricFilters, setMetricFilters] = useState<ProductionMetricsFilterParams>({
+  const metricFilters: ProductionMetricsFilterParams = {
     lineId: 'all',
-    months: [], // [] means "Tất cả các tháng"
+    months: [],
     years: [now.getFullYear()],
-  });
+  };
 
-  const { data: metrics, isLoading: isLoadingMetrics } = useProductionMetrics(metricFilters);
+  const { data: metrics } = useProductionMetrics(metricFilters);
 
   // ==========================================
   // TAB 1: PRODUCTION SHIFTS STATE
@@ -122,102 +142,57 @@ export const ProductionPage: React.FC = () => {
   const [viewingShift, setViewingShift] = useState<ProductionShift | null>(null);
   const [deletingShift, setDeletingShift] = useState<ProductionShift | null>(null);
 
-  // Dynamic header based on tab
-  const tabConfigs = {
-    'annual-plan': {
-      title: 'Kế hoạch sản xuất năm',
-      description: 'Lập và theo dõi kế hoạch sản lượng, nguyên nhiên liệu, thời gian và chỉ số KT-KT 12 tháng',
-    },
-    shifts: {
-      title: 'Theo dõi ca & nhập liệu',
-      description: 'Ghi nhận sản lượng thành phẩm, tiêu hao nguyên nhiên liệu, thời gian dừng chuyền và chất lượng sản phẩm',
-    },
-  };
+  // Batch warehouse sync state (Trưởng / phó phòng gom ca)
+  const [selectedShiftIds, setSelectedShiftIds] = useState<string[]>([]);
+  const [isBatchWarehouseOpen, setIsBatchWarehouseOpen] = useState(false);
 
-  const tabs = [
-    {
-      id: 'annual-plan' as const,
-      label: 'Kế hoạch sản xuất năm',
-      icon: Calendar,
-    },
-    {
-      id: 'shifts' as const,
-      label: 'Theo dõi ca & nhập liệu',
-      icon: Clock,
-      count: shiftsData?.totalCount,
-    },
-  ];
+  const selectedShifts = (shiftsData?.data || []).filter((shift) =>
+    selectedShiftIds.includes(shift.id),
+  );
+
+  // 4. Patrols & Incidents State & Hooks
+  const [patrolFilters, setPatrolFilters] = useState<PatrolFilterParams>({
+    search: '',
+    areaId: 'all',
+    hasIssue: 'all',
+    fromDate: '',
+    toDate: '',
+    page: 1,
+    pageSize: 15,
+  });
+
+  const { data: patrolAreas = [] } = usePatrolAreas();
+  const { data: patrolLogsData, isLoading: isLoadingPatrolLogs } = usePatrolLogs(patrolFilters);
+  const confirmNormalMutation = useConfirmNormalInspection();
+  const reportIncidentMutation = useReportPatrolIncident();
+  const { data: availableMachines = [] } = useAvailableMachines();
+  const createAreaMutation = useCreatePatrolArea();
+  const updateAreaMutation = useUpdatePatrolArea();
+
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isChecklistOpen, setIsChecklistOpen] = useState(false);
+  const [isQuickIncidentOpen, setIsQuickIncidentOpen] = useState(false);
+  const [isPrintQrOpen, setIsPrintQrOpen] = useState(false);
+  const [isAreaDialogOpen, setIsAreaDialogOpen] = useState(false);
+  const [editingArea, setEditingArea] = useState<PatrolArea | null>(null);
+  const [activeChecklistArea, setActiveChecklistArea] = useState<PatrolArea | null>(null);
+  const [selectedIncidentMachine, setSelectedIncidentMachine] = useState<PatrolAreaMachineItem | null>(null);
+  const [inspectorName, setInspectorName] = useState<string>(
+    user?.profile?.full_name || 'Công nhân tuần kiểm',
+  );
+
+  // Sync inspector name when user changes
+  useEffect(() => {
+    if (user?.profile?.full_name) {
+      setInspectorName(user.profile.full_name);
+    }
+  }, [user?.profile?.full_name]);
 
   return (
-    <PageContainer
-      title={tabConfigs[activeTab].title}
-      description={tabConfigs[activeTab].description}
-    >
-      <div className="space-y-4">
-        {/* Metric Cards Filter Bar: Lọc dây chuyền, tháng, năm */}
-        <ProductionMetricFilterBar
-          lineId={metricFilters.lineId || 'all'}
-          onLineIdChange={(lineId) => setMetricFilters((prev) => ({ ...prev, lineId }))}
-          selectedMonths={metricFilters.months || []}
-          onMonthsChange={(months) => setMetricFilters((prev) => ({ ...prev, months }))}
-          selectedYears={metricFilters.years || []}
-          onYearsChange={(years) => setMetricFilters((prev) => ({ ...prev, years }))}
-          lines={lines}
-          onReset={() =>
-            setMetricFilters({
-              lineId: 'all',
-              months: [],
-              years: [now.getFullYear()],
-            })
-          }
-        />
+    <PageContainer>
+      <div className="space-y-5">
 
-        {/* KPI Metrics Summary Bar (4 Cards) */}
-        <ProductionMetricCards metrics={metrics} isLoading={isLoadingMetrics} />
-
-        {/* Row of Consumption Norms vs Actuals with % comparison */}
-        <ProductionConsumptionNormsBar
-          norms={metrics?.consumptionNorms}
-          isLoading={isLoadingMetrics}
-        />
-
-        {/* Tab Navigation */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-border">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleTabChange(tab.id)}
-                className={cn(
-                  'flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors',
-                  isActive
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-muted-foreground hover:border-border hover:text-foreground',
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{tab.label}</span>
-                {tab.count !== undefined && (
-                  <span
-                    className={cn(
-                      'ml-1 rounded-full px-2 py-0.5 text-[10px]',
-                      isActive
-                        ? 'bg-primary/10 text-primary'
-                        : 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Tab 1: Kế hoạch sản xuất năm */}
+        {/* VIEW 1: Kế hoạch sản xuất năm */}
         {activeTab === 'annual-plan' && (
           <div className="space-y-4 animate-in fade-in duration-150">
             <ProductionAnnualPlanner
@@ -304,6 +279,50 @@ export const ProductionPage: React.FC = () => {
               canDelete={canDeleteShifts}
               plannedProductivityTph={metrics?.plannedProductivityTph}
               plannedRecoveryRatePct={metrics?.plannedRecoveryRatePct}
+              selectedShiftIds={selectedShiftIds}
+              onToggleSelectShift={(shiftId) => {
+                setSelectedShiftIds((prev) =>
+                  prev.includes(shiftId)
+                    ? prev.filter((id) => id !== shiftId)
+                    : [...prev, shiftId],
+                );
+              }}
+              onToggleSelectAll={(shiftIds) => setSelectedShiftIds(shiftIds)}
+              onOpenBatchWarehouseSync={() => setIsBatchWarehouseOpen(true)}
+              canBatchSyncWarehouse={canBatchSyncWarehouse}
+            />
+          </div>
+        )}
+
+        {/* Tab 3: Incidents & Downtime Pareto */}
+        {activeTab === 'incidents' && (
+          <div className="space-y-6">
+            <IncidentAnalyticsTab lines={lines} />
+          </div>
+        )}
+
+        {/* Tab 4: Lịch sử tuần kiểm thiết bị */}
+        {activeTab === 'patrols' && (
+          <div className="space-y-4 animate-in fade-in duration-150">
+            <ProductionPatrolHistoryTable
+              logs={patrolLogsData?.data || []}
+              areas={patrolAreas}
+              totalCount={patrolLogsData?.totalCount || 0}
+              currentPage={patrolLogsData?.page || 1}
+              totalPages={patrolLogsData?.totalPages || 1}
+              filters={patrolFilters}
+              onFilterChange={setPatrolFilters}
+              isLoading={isLoadingPatrolLogs}
+              onOpenScanner={() => setIsScannerOpen(true)}
+              onOpenQuickIncident={() => {
+                setSelectedIncidentMachine(null);
+                setIsQuickIncidentOpen(true);
+              }}
+              onOpenPrintQr={() => setIsPrintQrOpen(true)}
+              onOpenCreateArea={() => {
+                setEditingArea(null);
+                setIsAreaDialogOpen(true);
+              }}
             />
           </div>
         )}
@@ -348,6 +367,99 @@ export const ProductionPage: React.FC = () => {
         }}
         shift={deletingShift}
         isDeleting={deleteShiftMutation.isPending}
+      />
+
+      <BatchShiftWarehouseDialog
+        isOpen={isBatchWarehouseOpen}
+        onClose={() => setIsBatchWarehouseOpen(false)}
+        selectedShifts={selectedShifts}
+        onSuccess={() => {
+          setSelectedShiftIds([]);
+        }}
+      />
+
+      {/* Patrol & Quick Incident Modals */}
+      <ProductionQrScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        areas={patrolAreas}
+        onAreaDetected={(area) => {
+          setActiveChecklistArea(area);
+          setIsScannerOpen(false);
+          setIsChecklistOpen(true);
+        }}
+      />
+
+      <ProductionAreaChecklistModal
+        isOpen={isChecklistOpen}
+        onClose={() => {
+          setIsChecklistOpen(false);
+          setActiveChecklistArea(null);
+        }}
+        area={activeChecklistArea}
+        inspectorName={inspectorName}
+        onInspectorNameChange={setInspectorName}
+        onConfirmNormal={async (payload) => {
+          await confirmNormalMutation.mutateAsync(payload);
+        }}
+        onOpenReportIncident={(machine) => {
+          setSelectedIncidentMachine(machine || null);
+          setIsQuickIncidentOpen(true);
+        }}
+        isConfirming={confirmNormalMutation.isPending}
+      />
+
+      <ProductionQuickIncidentDialog
+        isOpen={isQuickIncidentOpen}
+        onClose={() => {
+          setIsQuickIncidentOpen(false);
+          setSelectedIncidentMachine(null);
+        }}
+        onSubmit={async (values: QuickIncidentFormValues) => {
+          await reportIncidentMutation.mutateAsync({
+            ...values,
+            checked_machines_count: activeChecklistArea?.machines?.length ?? 1,
+          });
+          setIsChecklistOpen(false);
+          setActiveChecklistArea(null);
+        }}
+        isSubmitting={reportIncidentMutation.isPending}
+        area={activeChecklistArea}
+        allAreas={patrolAreas}
+        preselectedMachine={selectedIncidentMachine}
+        defaultReporterName={inspectorName}
+      />
+
+      <ProductionAreaQrPrintDialog
+        isOpen={isPrintQrOpen}
+        onClose={() => setIsPrintQrOpen(false)}
+        areas={patrolAreas}
+        onEditArea={(area) => {
+          setIsPrintQrOpen(false);
+          setEditingArea(area);
+          setIsAreaDialogOpen(true);
+        }}
+      />
+
+      <ProductionPatrolAreaDialog
+        isOpen={isAreaDialogOpen}
+        onClose={() => {
+          setIsAreaDialogOpen(false);
+          setEditingArea(null);
+        }}
+        initialData={editingArea}
+        lines={lines}
+        availableMachines={availableMachines}
+        onSubmit={async (values: PatrolAreaFormValues) => {
+          if (editingArea) {
+            await updateAreaMutation.mutateAsync({ id: editingArea.id, payload: values });
+          } else {
+            await createAreaMutation.mutateAsync(values);
+          }
+          setIsAreaDialogOpen(false);
+          setEditingArea(null);
+        }}
+        isSubmitting={createAreaMutation.isPending || updateAreaMutation.isPending}
       />
     </PageContainer>
   );

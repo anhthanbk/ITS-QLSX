@@ -203,7 +203,7 @@ describe('Warehouse Components', () => {
 
     it('renders granular commodity classification badges correctly', () => {
       const { rerender } = render(<ItemTypeBadge type="material" category="raw_material" />);
-      expect(screen.getByText('Nguyên vật liệu chính')).toBeInTheDocument();
+      expect(screen.getByText('Nguyên vật liệu')).toBeInTheDocument();
 
       rerender(<ItemTypeBadge type="material" category="chemical" />);
       expect(screen.getByText('Hóa chất công nghiệp')).toBeInTheDocument();
@@ -221,7 +221,7 @@ describe('Warehouse Components', () => {
       expect(screen.getByText('Bán thành phẩm')).toBeInTheDocument();
 
       rerender(<ItemTypeBadge type="byproduct" category="by_product" />);
-      expect(screen.getByText('Phụ phẩm')).toBeInTheDocument();
+      expect(screen.getByText('Phụ phẩm thu hồi')).toBeInTheDocument();
     });
   });
 
@@ -582,11 +582,11 @@ describe('Warehouse Components', () => {
 
       // Verify commodity classification selector exists with comprehensive categories
       const categorySelect = screen.getByLabelText(/Phân loại mặt hàng/i);
-      expect(categorySelect).toHaveTextContent(/Nguyên vật liệu chính/i);
+      expect(categorySelect).toHaveTextContent(/Nguyên vật liệu/i);
       expect(categorySelect).toHaveTextContent(/Hóa chất công nghiệp/i);
-      expect(categorySelect).toHaveTextContent(/Phụ tùng & Linh kiện cơ điện/i);
+      expect(categorySelect).toHaveTextContent(/Phụ tùng cơ điện/i);
       expect(categorySelect).toHaveTextContent(/Vật tư phụ trợ khác/i);
-      expect(categorySelect).toHaveTextContent(/Thành phẩm sản xuất/i);
+      expect(categorySelect).toHaveTextContent(/Thành phẩm/i);
       expect(categorySelect).toHaveTextContent(/Phụ phẩm thu hồi/i);
 
       // Switch category to Chemical
@@ -930,7 +930,7 @@ describe('Warehouse Components', () => {
       },
     ];
 
-    it('renders stock balance table with Inbound, Outbound, and Current Stock columns', () => {
+    it('renders stock balance table with warehouse name and current stock', () => {
       render(
         <StockBalanceTable
           data={{
@@ -957,19 +957,23 @@ describe('Warehouse Components', () => {
         />
       );
 
-      // Verify warehouse group header
+      // Verify warehouse group header and category badge are rendered
       expect(screen.getByText('Kho Nguyên Vật Liệu Chính')).toBeInTheDocument();
-      expect(screen.getByText('K-NVL')).toBeInTheDocument();
-      expect(screen.getByText(/1 mặt hàng/i)).toBeInTheDocument();
+      expect(screen.getAllByText('Nguyên liệu thô').length).toBeGreaterThan(0);
 
-      // Verify columns
-      expect(screen.getByText(/Tổng Nhập \(\+\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/Tổng Xuất \(-\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/Tồn thực tế \(=\)/i)).toBeInTheDocument();
+      // By default, warehouses are collapsed initially (user request)
+      expect(screen.queryByText('Mã mặt hàng')).not.toBeInTheDocument();
 
-      // Verify data row and summary values
-      expect(screen.getAllByText('1.000').length).toBeGreaterThan(0);
-      expect(screen.getAllByText('200').length).toBeGreaterThan(0);
+      // Expand all warehouses
+      const expandAllBtn = screen.getByRole('button', { name: /Mở rộng tất cả/i });
+      fireEvent.click(expandAllBtn);
+
+      // Verify columns after expanding
+      expect(screen.getByText('Mã mặt hàng')).toBeInTheDocument();
+      expect(screen.getByText('Tên hàng / Vật tư')).toBeInTheDocument();
+      expect(screen.getByText('Tồn kho')).toBeInTheDocument();
+
+      // Verify stock quantity is rendered
       expect(screen.getAllByText('800').length).toBeGreaterThan(0);
     });
 
@@ -1002,22 +1006,21 @@ describe('Warehouse Components', () => {
         />
       );
 
-      // Initially expanded: item details are visible
-      expect(screen.getByText('Quặng Bauxite Thô Loại 1')).toBeInTheDocument();
-
-      // Click "Thu gọn tất cả"
-      const collapseAllBtn = screen.getByRole('button', { name: /Thu gọn tất cả/i });
-      await user.click(collapseAllBtn);
-
-      // Item details should now be collapsed
+      // Initially collapsed: item details are not visible
       expect(screen.queryByText('Quặng Bauxite Thô Loại 1')).not.toBeInTheDocument();
 
-      // Click warehouse header to expand again
+      // Click warehouse header to expand
       const warehouseHeader = screen.getByText('Kho Nguyên Vật Liệu Chính');
       await user.click(warehouseHeader);
 
-      // Item details visible again
+      // Item details should now be visible
       expect(screen.getByText('Quặng Bauxite Thô Loại 1')).toBeInTheDocument();
+
+      // Click warehouse header again to collapse
+      await user.click(warehouseHeader);
+
+      // Item details should now be collapsed
+      expect(screen.queryByText('Quặng Bauxite Thô Loại 1')).not.toBeInTheDocument();
     });
 
     it('switches view mode to aggregated by item and expands warehouse breakdown', async () => {
@@ -1054,10 +1057,9 @@ describe('Warehouse Components', () => {
       await user.click(byItemBtn);
 
       // Aggregated headers visible
-      expect(screen.getByText(/Tổng Nhập Cty \(\+\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/Tổng Xuất Cty \(-\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/Tổng Tồn Thực Tế \(=\)/i)).toBeInTheDocument();
-      expect(screen.getByText(/2 kho/i)).toBeInTheDocument();
+      expect(screen.getByText('Mã mặt hàng')).toBeInTheDocument();
+      expect(screen.getByText('Tên hàng / Vật tư')).toBeInTheDocument();
+      expect(screen.getByText('Tồn kho')).toBeInTheDocument();
 
       // Click on row to expand details
       const itemName = screen.getByText('Quặng Bauxite Thô Loại 1');
@@ -1065,7 +1067,89 @@ describe('Warehouse Components', () => {
 
       // Warehouse breakdown visible
       expect(screen.getByText(/Chi tiết phân bổ tồn kho của vật tư/i)).toBeInTheDocument();
+      expect(screen.getByText('Kho lưu trữ')).toBeInTheDocument();
+      expect(screen.getByText('Tồn tại kho')).toBeInTheDocument();
       expect(screen.getByText(/Kho Trung Gian Số 2/i)).toBeInTheDocument();
+    });
+
+    it('groups warehouses by warehouse classification section in by_warehouse mode', () => {
+      render(
+        <StockBalanceTable
+          data={{
+            data: mockStockBalances,
+            totalCount: 1,
+            page: 1,
+            pageSize: 10,
+            totalPages: 1,
+          }}
+          isLoading={false}
+          isError={false}
+          onRetry={vi.fn()}
+          warehouses={mockWarehouses}
+          selectedWarehouseId="all"
+          onWarehouseChange={vi.fn()}
+          selectedItemType="all"
+          onItemTypeChange={vi.fn()}
+          search=""
+          onSearchChange={vi.fn()}
+          onResetFilters={vi.fn()}
+          onPageChange={vi.fn()}
+          onAdjustStock={vi.fn()}
+          canTransact={true}
+        />
+      );
+
+      // Verify warehouse type section header
+      expect(screen.getByText('Kho Nguyên Liệu Thô')).toBeInTheDocument();
+      expect(screen.getByText('Kho Nguyên Vật Liệu Chính')).toBeInTheDocument();
+    });
+
+    it('groups items by material classification with collapse/expand in by_item mode', async () => {
+      const user = userEvent.setup();
+
+      render(
+        <StockBalanceTable
+          data={{
+            data: mockStockBalances,
+            totalCount: 1,
+            page: 1,
+            pageSize: 10,
+            totalPages: 1,
+          }}
+          isLoading={false}
+          isError={false}
+          onRetry={vi.fn()}
+          warehouses={mockWarehouses}
+          selectedWarehouseId="all"
+          onWarehouseChange={vi.fn()}
+          selectedItemType="all"
+          onItemTypeChange={vi.fn()}
+          search=""
+          onSearchChange={vi.fn()}
+          onResetFilters={vi.fn()}
+          onPageChange={vi.fn()}
+          onAdjustStock={vi.fn()}
+          canTransact={true}
+        />
+      );
+
+      // Switch to by_item mode
+      const byItemBtn = screen.getByRole('button', { name: /Tổng hợp theo vật tư/i });
+      await user.click(byItemBtn);
+
+      // Verify material classification section header is displayed
+      expect(screen.getByText('Nguyên Vật Liệu Thô & Khoáng Sản')).toBeInTheDocument();
+      expect(screen.getByText('Quặng Bauxite Thô Loại 1')).toBeInTheDocument();
+
+      // Test "Thu gọn tất cả phân loại"
+      const collapseAllBtn = screen.getByRole('button', { name: /Thu gọn tất cả phân loại/i });
+      await user.click(collapseAllBtn);
+      expect(screen.queryByText('Quặng Bauxite Thô Loại 1')).not.toBeInTheDocument();
+
+      // Test "Mở rộng tất cả phân loại"
+      const expandAllBtn = screen.getByRole('button', { name: /Mở rộng tất cả phân loại/i });
+      await user.click(expandAllBtn);
+      expect(screen.getByText('Quặng Bauxite Thô Loại 1')).toBeInTheDocument();
     });
   });
 
@@ -1090,6 +1174,7 @@ describe('Warehouse Components', () => {
         name: 'Alumina cát loại 1 (Al2O3 >= 98.6%)',
         product_type: 'finished_good',
         unit_of_measure: 'Tấn',
+        specifications: 'Fe2O3 <= 80ppm, SiO2 >= 99.5%',
         base_sales_price: 9500000,
         standard_cycle_time_mins: 120,
         standard_labor_cost: 450000,
@@ -1103,6 +1188,7 @@ describe('Warehouse Components', () => {
         name: 'Nhôm Hydroxit Al(OH)3 ẩm',
         product_type: 'semi_finished',
         unit_of_measure: 'Tấn',
+        specifications: null,
         base_sales_price: 6200000,
         standard_cycle_time_mins: 60,
         standard_labor_cost: 200000,
@@ -1112,7 +1198,7 @@ describe('Warehouse Components', () => {
       },
     ];
 
-    it('renders products list with SKU, name, type badges, price, and stock', () => {
+    it('renders products list with SKU, name, specifications, type badges, price, and stock', () => {
       render(
         <ProductCatalogTable
           data={{
@@ -1139,8 +1225,10 @@ describe('Warehouse Components', () => {
         />
       );
 
+      expect(screen.getByText('Thông số kỹ thuật')).toBeInTheDocument();
       expect(screen.getByText('AL-SAND-01')).toBeInTheDocument();
       expect(screen.getByText('Alumina cát loại 1 (Al2O3 >= 98.6%)')).toBeInTheDocument();
+      expect(screen.getByText('Fe2O3 <= 80ppm, SiO2 >= 99.5%')).toBeInTheDocument();
       expect(screen.getByText('Thành phẩm sản xuất')).toBeInTheDocument();
       expect(screen.getByText('HYD-WET-01')).toBeInTheDocument();
       expect(screen.getAllByText('Bán thành phẩm').length).toBeGreaterThanOrEqual(1);
@@ -1255,7 +1343,7 @@ describe('Warehouse Components', () => {
       const skuInput = screen.getByPlaceholderText(/AL-SAND-01/i);
       await user.type(skuInput, 'PROD-NEW-01');
 
-      const nameInput = screen.getByPlaceholderText(/Alumina cát/i);
+      const nameInput = screen.getByLabelText(/Tên sản phẩm/i);
       await user.type(nameInput, 'Sản phẩm mới kiểm thử');
 
       const submitBtn = screen.getByRole('button', { name: 'Thêm sản phẩm' });

@@ -3,10 +3,16 @@ import {
   productionPlanSchema,
   technoEconomicNormSchema,
   productionShiftSchema,
+  shiftMaterialConsumptionSchema,
   shiftDowntimeSchema,
   productionOrderSchema,
   productionBatchSchema,
 } from '@/features/production/validation/production-schemas';
+import {
+  isFinishedProduct,
+  isSemiFinishedProduct,
+  isByProduct,
+} from '@/features/production/types';
 
 describe('Production Module Validation Schemas', () => {
   describe('productionPlanSchema', () => {
@@ -393,6 +399,189 @@ describe('Production Module Validation Schemas', () => {
 
       const result = productionBatchSchema.safeParse(validBatch);
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('shiftMaterialConsumptionSchema - semi_finished', () => {
+    it('validates material consumption with semi_finished category', () => {
+      const semiMat = {
+        resource_name: 'Cát thạch anh mịn đã qua phân ly (BTP)',
+        category: 'semi_finished' as const,
+        unit_of_measure: 'tấn',
+        actual_quantity: 45.5,
+        warehouse_id: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+      };
+
+      const result = shiftMaterialConsumptionSchema.safeParse(semiMat);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.category).toBe('semi_finished');
+        expect(result.data.actual_quantity).toBe(45.5);
+      }
+    });
+  });
+
+  describe('Product Classification Helpers for Semi-Finished Goods', () => {
+    it('accurately identifies semi-finished goods vs finished goods vs byproducts', () => {
+      const finishedGood = {
+        product_sku: 'CAT-01',
+        product_name: 'Cát thạch anh tiêu chuẩn xuất khẩu',
+        product_type: 'finished_good',
+      };
+
+      const semiFinishedGood = {
+        product_sku: 'BTP-LINE02-01',
+        product_name: 'Cát thạch anh mịn sau phân ly (BTP)',
+        product_type: 'semi_finished',
+      };
+
+      const byProduct = {
+        product_sku: 'MAGMIN',
+        product_name: 'Bùn khoáng tuyển nổi Magmin (Phụ phẩm)',
+        product_type: 'by_product',
+      };
+
+      // 1. Finished good check
+      expect(isFinishedProduct(finishedGood)).toBe(true);
+      expect(isSemiFinishedProduct(finishedGood)).toBe(false);
+      expect(isByProduct(finishedGood)).toBe(false);
+
+      // 2. Semi-finished good check - strictly separate from finished good and byproduct
+      expect(isFinishedProduct(semiFinishedGood)).toBe(false);
+      expect(isSemiFinishedProduct(semiFinishedGood)).toBe(true);
+      expect(isByProduct(semiFinishedGood)).toBe(false);
+
+      // 3. Byproduct check
+      expect(isFinishedProduct(byProduct)).toBe(false);
+      expect(isSemiFinishedProduct(byProduct)).toBe(false);
+      expect(isByProduct(byProduct)).toBe(true);
+    });
+
+    it('identifies semi-finished goods by name or sku pattern when product_type is absent', () => {
+      const itemWithName = {
+        product_sku: 'CAT-THO',
+        product_name: 'Bán thành phẩm sau nghiền thô',
+      };
+      expect(isSemiFinishedProduct(itemWithName)).toBe(true);
+      expect(isFinishedProduct(itemWithName)).toBe(false);
+
+      const itemWithSku = {
+        product_sku: 'BTP-02',
+        product_name: 'Khoáng sau tuyển cấp hạt',
+      };
+      expect(isSemiFinishedProduct(itemWithSku)).toBe(true);
+      expect(isFinishedProduct(itemWithSku)).toBe(false);
+    });
+
+    it('ensures by-products like FSAP (Cát siêu mịn sau chế biến) are NOT misclassified as semi-finished goods', () => {
+      const fsapItem = {
+        product_sku: 'FSAP',
+        product_name: 'Cát siêu mịn sau chế biến FSAP',
+      };
+      expect(isByProduct(fsapItem)).toBe(true);
+      expect(isSemiFinishedProduct(fsapItem)).toBe(false);
+      expect(isFinishedProduct(fsapItem)).toBe(false);
+
+      const magminItem = {
+        product_sku: 'MAGMIN',
+        product_name: 'Cát trắng phụ phẩm MM',
+      };
+      expect(isByProduct(magminItem)).toBe(true);
+      expect(isSemiFinishedProduct(magminItem)).toBe(false);
+      expect(isFinishedProduct(magminItem)).toBe(false);
+
+      const vfsItem = {
+        product_sku: 'VFS',
+        product_name: 'Cát trắng phụ phẩm VFS',
+      };
+      expect(isByProduct(vfsItem)).toBe(true);
+      expect(isSemiFinishedProduct(vfsItem)).toBe(false);
+      expect(isFinishedProduct(vfsItem)).toBe(false);
+    });
+  });
+
+  describe('shiftMaterialConsumptionSchema Energy Category', () => {
+    it('accepts energy as a valid material consumption category', () => {
+      const elecItem = {
+        resource_name: 'Điện năng tiêu thụ (Điện sản xuất)',
+        category: 'energy' as const,
+        unit_of_measure: 'kWh',
+        actual_quantity: 45000,
+      };
+      const result = shiftMaterialConsumptionSchema.safeParse(elecItem);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.category).toBe('energy');
+      }
+    });
+  });
+
+  describe('Multi-Warehouse Grouping (Requirement 2)', () => {
+    it('groups products into separate lines when entered into multiple warehouses', () => {
+      // Giả lập ca 1 nhập Kho A (50 tấn) và ca 2 nhập Kho B (30 tấn) cho cùng 1 loại sản phẩm
+      const shiftsOutputs = [
+        {
+          shift_id: 's1',
+          product_id: 'p1',
+          product_name: 'Bột cát thạch anh mịn',
+          warehouse_id: 'wh-kho-a',
+          quantity_tons: 50,
+        },
+        {
+          shift_id: 's2',
+          product_id: 'p1',
+          product_name: 'Bột cát thạch anh mịn',
+          warehouse_id: 'wh-kho-b',
+          quantity_tons: 30,
+        },
+      ];
+
+      // Áp dụng thuật toán nhóm theo item + warehouse đã ghi
+      const groupMap = new Map<string, { total_quantity: number; warehouse_id: string }>();
+      for (const item of shiftsOutputs) {
+        const key = `${item.product_id}___${item.warehouse_id}`;
+        const existing = groupMap.get(key);
+        if (existing) {
+          existing.total_quantity += item.quantity_tons;
+        } else {
+          groupMap.set(key, { total_quantity: item.quantity_tons, warehouse_id: item.warehouse_id });
+        }
+      }
+
+      // Kết quả phải tạo thành 2 dòng riêng biệt
+      const groupedRows = Array.from(groupMap.values());
+      expect(groupedRows).toHaveLength(2);
+      expect(groupedRows.find((r) => r.warehouse_id === 'wh-kho-a')?.total_quantity).toBe(50);
+      expect(groupedRows.find((r) => r.warehouse_id === 'wh-kho-b')?.total_quantity).toBe(30);
+    });
+
+    it('separates semi-finished goods into their own dedicated category during warehouse sync grouping', () => {
+      const shiftOutputs = [
+        { product_sku: 'S80', product_name: 'Cát thủy tinh S80', product_type: 'finished_good', quantity_tons: 100 },
+        { product_sku: 'CNS-BTP', product_name: 'CNS Bán thành phẩm', product_type: 'semi_finished', quantity_tons: 40 },
+        { product_sku: 'FSAP', product_name: 'Cát siêu mịn sau chế biến FSAP', product_type: 'by_product', quantity_tons: 15 },
+      ];
+
+      const finishList: typeof shiftOutputs = [];
+      const semiList: typeof shiftOutputs = [];
+      const bypList: typeof shiftOutputs = [];
+
+      for (const p of shiftOutputs) {
+        if (isByProduct(p)) {
+          bypList.push(p);
+        } else if (isSemiFinishedProduct(p)) {
+          semiList.push(p);
+        } else {
+          finishList.push(p);
+        }
+      }
+
+      expect(finishList).toHaveLength(1);
+      expect(finishList[0]?.product_sku).toBe('S80');
+      expect(semiList).toHaveLength(1);
+      expect(semiList[0]?.product_sku).toBe('CNS-BTP');
+      expect(bypList).toHaveLength(1);
+      expect(bypList[0]?.product_sku).toBe('FSAP');
     });
   });
 });

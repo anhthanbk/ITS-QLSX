@@ -144,6 +144,7 @@ export const ProductCatalogTable: React.FC<ProductCatalogTableProps> = ({
               <tr className="border-b border-border bg-muted/50 font-semibold text-muted-foreground">
                 <th className="py-3 px-4">Mã SKU</th>
                 <th className="py-3 px-4">Tên sản phẩm & Quy cách</th>
+                <th className="py-3 px-3">Thông số kỹ thuật</th>
                 <th className="py-3 px-3">Phân loại</th>
                 <th className="py-3 px-3 text-center">ĐVT</th>
                 <th className="py-3 px-3 text-right">Tồn kho hiện tại</th>
@@ -159,7 +160,8 @@ export const ProductCatalogTable: React.FC<ProductCatalogTableProps> = ({
                   {[...Array(5)].map((_, i) => (
                     <tr key={i} className="animate-pulse">
                       <td className="py-3 px-4"><div className="h-4 w-20 rounded bg-muted"></div></td>
-                      <td className="py-3 px-4"><div className="h-4 w-48 rounded bg-muted"></div></td>
+                      <td className="py-3 px-4"><div className="h-4 w-40 rounded bg-muted"></div></td>
+                      <td className="py-3 px-3"><div className="h-4 w-48 rounded bg-muted"></div></td>
                       <td className="py-3 px-3"><div className="h-4 w-24 rounded bg-muted"></div></td>
                       <td className="py-3 px-3 text-center"><div className="mx-auto h-4 w-10 rounded bg-muted"></div></td>
                       <td className="py-3 px-3 text-right"><div className="ml-auto h-4 w-16 rounded bg-muted"></div></td>
@@ -176,7 +178,7 @@ export const ProductCatalogTable: React.FC<ProductCatalogTableProps> = ({
 
               {isError && !isLoading && (
                 <tr>
-                  <td colSpan={canManage ? 9 : 8} className="py-12 text-center">
+                  <td colSpan={canManage ? 10 : 9} className="py-12 text-center">
                     <div className="flex flex-col items-center justify-center gap-2 text-destructive">
                       <AlertCircle className="h-6 w-6" />
                       <p className="font-medium">Không thể tải danh mục sản phẩm</p>
@@ -192,7 +194,7 @@ export const ProductCatalogTable: React.FC<ProductCatalogTableProps> = ({
 
               {!isLoading && !isError && products.length === 0 && (
                 <tr>
-                  <td colSpan={canManage ? 9 : 8} className="py-12 text-center text-muted-foreground">
+                  <td colSpan={canManage ? 10 : 9} className="py-12 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Package className="h-8 w-8 text-muted-foreground/40" />
                       <p className="font-medium">Chưa có sản phẩm / thành phẩm nào phù hợp</p>
@@ -216,6 +218,15 @@ export const ProductCatalogTable: React.FC<ProductCatalogTableProps> = ({
                     </td>
                     <td className="py-3 px-4 font-medium text-foreground">
                       {item.name}
+                    </td>
+                    <td className="py-3 px-3 text-muted-foreground max-w-xs">
+                      {item.specifications ? (
+                        <span className="line-clamp-2 text-[11px]" title={item.specifications}>
+                          {item.specifications}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/50 italic">—</span>
+                      )}
                     </td>
                     <td className="py-3 px-3">
                       <ProductTypeBadge type={item.product_type} />

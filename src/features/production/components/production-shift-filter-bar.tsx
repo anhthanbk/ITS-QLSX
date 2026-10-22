@@ -1,16 +1,16 @@
 import React from 'react';
-import { Search, RotateCcw, Plus, CalendarRange } from 'lucide-react';
+import { RotateCcw, Plus, CalendarRange } from 'lucide-react';
 import type { ShiftStatus, ProductionLine } from '../types';
 
 interface ProductionShiftFilterBarProps {
-  search: string;
-  onSearchChange: (value: string) => void;
+  search?: string;
+  onSearchChange?: (value: string) => void;
   status?: ShiftStatus | 'all';
   onStatusChange?: (value: ShiftStatus | 'all') => void;
   lineId: string | 'all';
   onLineIdChange: (value: string | 'all') => void;
-  shiftNumber: number | 'all';
-  onShiftNumberChange: (value: number | 'all') => void;
+  shiftNumber?: number | 'all';
+  onShiftNumberChange?: (value: number | 'all') => void;
   fromDate: string;
   onFromDateChange: (value: string) => void;
   toDate: string;
@@ -23,14 +23,14 @@ interface ProductionShiftFilterBarProps {
 }
 
 export const ProductionShiftFilterBar: React.FC<ProductionShiftFilterBarProps> = ({
-  search,
-  onSearchChange,
+  search: _search,
+  onSearchChange: _onSearchChange,
   status: _status,
   onStatusChange: _onStatusChange,
   lineId,
   onLineIdChange,
-  shiftNumber,
-  onShiftNumberChange,
+  shiftNumber: _shiftNumber,
+  onShiftNumberChange: _onShiftNumberChange,
   fromDate,
   onFromDateChange,
   toDate,
@@ -42,50 +42,9 @@ export const ProductionShiftFilterBar: React.FC<ProductionShiftFilterBarProps> =
   canManage,
 }) => {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* Search */}
-        <div className="relative min-w-[240px] flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Tìm theo mã ca sản xuất..."
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full rounded-lg border border-input bg-background py-2 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-        </div>
-
-        {/* Action Buttons */}
-        {canManage && (
-          <div className="flex flex-wrap items-center gap-2">
-            {onCreateRange && (
-              <button
-                type="button"
-                onClick={onCreateRange}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3.5 py-2 text-sm font-semibold text-primary shadow-xs hover:bg-primary/20 transition-colors"
-                title="Ghi nhận sản lượng và tiêu hao tổng hợp theo khoảng ngày tùy chọn"
-              >
-                <CalendarRange className="h-4 w-4" />
-                Nhập từ ngày đến ngày
-              </button>
-            )}
-            {onCreate && (
-              <button
-                type="button"
-                onClick={onCreate}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
-              >
-                <Plus className="h-4 w-4" />
-                Ghi nhận ca sản xuất
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Filters Row */}
-      <div className="flex flex-wrap items-center gap-2.5 pt-1">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 shadow-sm">
+      {/* Left: Filters (Dây chuyền, Từ ngày, Đến ngày, Đặt lại) */}
+      <div className="flex flex-wrap items-center gap-2.5">
         {/* Line select */}
         <select
           value={lineId}
@@ -99,21 +58,6 @@ export const ProductionShiftFilterBar: React.FC<ProductionShiftFilterBarProps> =
               {l.code} - {l.name}
             </option>
           ))}
-        </select>
-
-        {/* Shift Number select */}
-        <select
-          value={shiftNumber}
-          onChange={(e) =>
-            onShiftNumberChange(e.target.value === 'all' ? 'all' : Number(e.target.value))
-          }
-          aria-label="Ca sản xuất"
-          className="rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          <option value="all">Tất cả các ca</option>
-          <option value={1}>Ca 1 (06:00 - 14:00)</option>
-          <option value={2}>Ca 2 (14:00 - 22:00)</option>
-          <option value={3}>Ca 3 (22:00 - 06:00)</option>
         </select>
 
         {/* From Date */}
@@ -144,13 +88,41 @@ export const ProductionShiftFilterBar: React.FC<ProductionShiftFilterBarProps> =
         <button
           type="button"
           onClick={onReset}
-          className="inline-flex items-center gap-1 rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-input bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
           title="Đặt lại bộ lọc"
+          aria-label="Đặt lại bộ lọc"
         >
-          <RotateCcw className="h-3 w-3" />
-          Đặt lại
+          <RotateCcw className="h-3.5 w-3.5" />
         </button>
       </div>
+
+      {/* Right: Action Buttons (Nhập từ ngày đến ngày, Ghi nhận ca sản xuất) */}
+      {canManage && (
+        <div className="flex items-center gap-2">
+          {onCreateRange && (
+            <button
+              type="button"
+              onClick={onCreateRange}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 text-primary shadow-xs hover:bg-primary/20 transition-colors"
+              title="Nhập từ ngày đến ngày"
+              aria-label="Nhập từ ngày đến ngày"
+            >
+              <CalendarRange className="h-4 w-4" />
+            </button>
+          )}
+          {onCreate && (
+            <button
+              type="button"
+              onClick={onCreate}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+              title="Ghi nhận ca sản xuất"
+              aria-label="Ghi nhận ca sản xuất"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

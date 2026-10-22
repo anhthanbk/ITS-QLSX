@@ -118,6 +118,7 @@ export interface InventoryTransaction {
   unit_cost: number;
   reference_doc_type: string | null;
   reference_doc_id: string | null;
+  production_period_code?: string | null;
   notes: string | null;
   created_by: string | null;
   created_by_name?: string | null;
@@ -132,6 +133,8 @@ export interface PaginatedResult<T> {
   page: number;
   pageSize: number;
   totalPages: number;
+  totalInbound?: number;
+  totalOutbound?: number;
 }
 
 export interface WarehouseFilterParams {
@@ -153,6 +156,7 @@ export interface StockBalanceFilterParams {
 export interface TransactionFilterParams {
   search?: string;
   warehouseId?: string;
+  itemId?: string;
   transactionType?: string;
   itemType?: string;
   startDate?: string;
@@ -208,6 +212,7 @@ export interface ProductCatalogItem {
   name: string;
   product_type: ProductType;
   unit_of_measure: string;
+  specifications?: string | null;
   base_sales_price: number;
   standard_cycle_time_mins: number;
   standard_labor_cost: number;
@@ -223,5 +228,55 @@ export interface ProductCatalogFilterParams {
   status?: string;
   page: number;
   pageSize: number;
+}
+
+export interface MaterialStockAlert {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  unit_of_measure: string;
+  current_stock: number;
+  min_stock_level: number;
+  reorder_point: number;
+  shortage_quantity: number;
+  severity: 'out_of_stock' | 'critical_low' | 'reorder_point';
+}
+
+export interface MaterialCategorySummary {
+  category: string;
+  label: string;
+  materialCount: number;
+  totalQuantity: number;
+  totalValue: number;
+  lowStockCount: number;
+}
+
+export interface TopConsumedMaterial {
+  material_id: string;
+  code: string;
+  name: string;
+  unit_of_measure: string;
+  totalQuantity: number;
+  totalValue: number;
+}
+
+export interface MaterialDashboardData {
+  kpis: {
+    totalMaterials: number;
+    activeMaterials: number;
+    outOfStockCount: number;
+    lowStockCount: number;
+    overstockCount: number;
+    totalInventoryValue: number;
+    monthlyInboundQty: number;
+    monthlyInboundValue: number;
+    monthlyOutboundQty: number;
+    monthlyOutboundValue: number;
+  };
+  alerts: MaterialStockAlert[];
+  categories: MaterialCategorySummary[];
+  topConsumed: TopConsumedMaterial[];
+  recentTransactions: InventoryTransaction[];
 }
 

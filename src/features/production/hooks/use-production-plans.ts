@@ -3,6 +3,7 @@ import {
   fetchProductionPlans,
   fetchProductionPlanById,
   fetchAnnualProductionPlan,
+  fetchProductionPlannedYears,
   saveAnnualProductionPlan,
   approveAnnualProductionPlan,
   deleteAnnualProductionPlan,
@@ -44,6 +45,7 @@ export function useCreateProductionPlan() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['production-plans'] });
       queryClient.invalidateQueries({ queryKey: ['production-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['production-planned-years'] });
       success(`Đã tạo kế hoạch sản xuất: ${data.plan_code}`, 'Thành công');
     },
     onError: (err: Error) => {
@@ -97,6 +99,7 @@ export function useDeleteProductionPlan() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['production-plans'] });
       queryClient.invalidateQueries({ queryKey: ['production-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['production-planned-years'] });
       success('Đã xóa kế hoạch sản xuất thành công.', 'Đã xóa');
     },
     onError: (err: Error) => {
@@ -127,6 +130,7 @@ export function useSaveAnnualProductionPlan() {
       queryClient.invalidateQueries({ queryKey: [ALL_LINES_PLAN_KEY, variables.year] });
       queryClient.invalidateQueries({ queryKey: ['production-plans'] });
       queryClient.invalidateQueries({ queryKey: ['production-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['production-planned-years'] });
       success(`Đã lưu kế hoạch sản xuất năm ${variables.year} thành công.`, 'Thành công');
     },
     onError: (err: Error) => {
@@ -149,6 +153,7 @@ export function useApproveAnnualProductionPlan() {
       queryClient.invalidateQueries({ queryKey: [ALL_LINES_PLAN_KEY, variables.year] });
       queryClient.invalidateQueries({ queryKey: ['production-plans'] });
       queryClient.invalidateQueries({ queryKey: ['production-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['production-planned-years'] });
       success(`Kế hoạch sản xuất năm ${variables.year} đã được phê duyệt.`, 'Thành công');
     },
     onError: (err: Error) => {
@@ -171,6 +176,7 @@ export function useDeleteAnnualProductionPlan() {
       queryClient.invalidateQueries({ queryKey: [ALL_LINES_PLAN_KEY, variables.year] });
       queryClient.invalidateQueries({ queryKey: ['production-plans'] });
       queryClient.invalidateQueries({ queryKey: ['production-metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['production-planned-years'] });
       success(`Đã xóa toàn bộ kế hoạch sản xuất năm ${variables.year} thành công.`, 'Thành công');
     },
     onError: (err: Error) => {
@@ -178,4 +184,16 @@ export function useDeleteAnnualProductionPlan() {
     },
   });
 }
+
+/**
+ * Hook to fetch distinct years with existing production plans.
+ */
+export function useProductionPlannedYears() {
+  return useQuery({
+    queryKey: ['production-planned-years'],
+    queryFn: () => fetchProductionPlannedYears(),
+    staleTime: 60 * 1000,
+  });
+}
+
 
