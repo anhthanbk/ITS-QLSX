@@ -1,263 +1,130 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import {
-  ChevronDown,
-  ChevronRight,
-  Factory,
-  X,
-  ChevronLeft,
-  Menu,
-} from 'lucide-react';
+import { Landmark } from 'lucide-react';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { navigationItems, filterNavItems, type NavItem } from './nav-items';
-import { useLayout } from './use-layout';
+import { PORTAL_DEPARTMENT_GROUPS } from '@/features/portal/portal-data';
+import { MobileNav } from './mobile-nav';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 
 export const Sidebar: React.FC = () => {
   const { hasPermission, hasRole } = useAuth();
-  const {
-    isSidebarCollapsed,
-    isMobileSidebarOpen,
-    toggleSidebar,
-    closeMobileSidebar,
-  } = useLayout();
   const location = useLocation();
 
-  // State to track which parent accordion item is open
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    // Automatically open group if current route matches
-    const initial: Record<string, boolean> = {};
-    for (const item of navigationItems) {
-      if (item.children) {
-        const matchesChild = item.children.some((c) => {
-          const basePath = c.path.split('?')[0] || c.path;
-          return c.path === '/'
-            ? location.pathname === '/'
-            : location.pathname.startsWith(basePath);
-        });
-        if (matchesChild) {
-          initial[item.id] = true;
+  // Lọc các chức năng theo quyền truy cập của người dùng
+  const authorizedGroups = useMemo(() => {
+    return PORTAL_DEPARTMENT_GROUPS.map((group) => {
+      const allowedFunctions = group.functions.filter((fn) => {
+        if (fn.requiredRole) {
+          const roles = Array.isArray(fn.requiredRole) ? fn.requiredRole : [fn.requiredRole];
+          if (!roles.some((r) => hasRole(r))) return false;
         }
-      }
-    }
-    return initial;
-  });
+        if (fn.requiredPermission) {
+          const perms = Array.isArray(fn.requiredPermission)
+            ? fn.requiredPermission
+            : [fn.requiredPermission];
+          if (!perms.some((p) => hasPermission(p))) return false;
+        }
+        return true;
+      });
 
-  const toggleGroup = (id: string) => {
-    setOpenGroups((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
+      return {
+        ...group,
+        functions: allowedFunctions,
+      };
+    }).filter((group) => group.functions.length > 0);
+  }, [hasPermission, hasRole]);
 
-  const filteredItems = filterNavItems(navigationItems, hasPermission, hasRole);
-  const currentFullPath = location.pathname + location.search;
-
-  const renderNavList = (isMobile: boolean) => (
-    <div className="flex flex-1 flex-col justify-between overflow-y-auto px-3 py-4">
-      <ul className="space-y-1.5" role="menubar">
-        {filteredItems.map((item: NavItem) => {
-          const hasChildren = item.children && item.children.length > 0;
-          const isGroupOpen = !!openGroups[item.id];
-          const isParentActive =
-            (item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)) ||
-            (hasChildren &&
-              item.children?.some((c) => {
-                const basePath = c.path.split('?')[0] || c.path;
-                return c.path === '/'
-                  ? location.pathname === '/'
-                  : location.pathname.startsWith(basePath);
-              }));
-
-          const IconComponent = item.icon;
-
-          if (hasChildren && (!isSidebarCollapsed || isMobile)) {
-            return (
-              <li key={item.id} className="space-y-1" role="none">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(item.id)}
-                  aria-expanded={isGroupOpen}
-                  className={cn(
-                    'group flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold tracking-wide transition-colors',
-                    isParentActive
-                      ? 'bg-accent/70 text-primary font-bold'
-                      : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    <IconComponent
-                      className={cn(
-                        'h-4.5 w-4.5 shrink-0 transition-colors',
-                        isParentActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
-                      )}
-                    />
-                    <span className="truncate">{item.title}</span>
-                  </div>
-                  {isGroupOpen ? (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform" />
-                  )}
-                </button>
-
-                {/* Submenu */}
-                {isGroupOpen && (
-                  <ul className="mt-1 space-y-1 pl-7 pr-1" role="menu">
-                    {item.children?.map((child) => {
-                      const isChildActive = child.path.includes('?')
-                        ? currentFullPath === child.path
-                        : location.pathname === child.path;
-                      return (
-                        <li key={child.id} role="none">
-                          <NavLink
-                            to={child.path}
-                            onClick={() => {
-                              if (isMobile) closeMobileSidebar();
-                            }}
-                            className={cn(
-                              'block rounded-md px-2.5 py-1.5 text-xs transition-colors',
-                              isChildActive
-                                ? 'bg-primary text-primary-foreground font-medium shadow-sm'
-                                : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-                            )}
-                            role="menuitem"
-                          >
-                            <span className="truncate">{child.title}</span>
-                          </NavLink>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </li>
-            );
-          }
-
-          // Single item or collapsed view
-          return (
-            <li key={item.id} role="none">
-              <NavLink
-                to={hasChildren && item.children?.[0] ? item.children[0].path : item.path}
-                onClick={() => {
-                  if (isMobile) closeMobileSidebar();
-                }}
-                title={isSidebarCollapsed && !isMobile ? item.title : undefined}
-                className={cn(
-                  'group flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold tracking-wide transition-colors',
-                  isParentActive
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-                  isSidebarCollapsed && !isMobile && 'justify-center px-2',
-                )}
-                role="menuitem"
-              >
-                <IconComponent
-                  className={cn(
-                    'h-4.5 w-4.5 shrink-0 transition-colors',
-                    isParentActive
-                      ? 'text-primary-foreground'
-                      : 'text-muted-foreground group-hover:text-foreground',
-                  )}
-                />
-                {(!isSidebarCollapsed || isMobile) && (
-                  <span className="truncate">{item.title}</span>
-                )}
-              </NavLink>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+  // Danh sách các phòng ban (bỏ mục điều hành vì đã đưa lên nút trực tiếp ở trên)
+  const departmentNavGroups = useMemo(
+    () => authorizedGroups.filter((g) => g.id !== 'executive'),
+    [authorizedGroups],
   );
+
+  const isExecutiveActive =
+    location.pathname === '/' || location.pathname.startsWith('/executive');
 
   return (
     <>
-      {/* Mobile Drawer Backdrop */}
-      {isMobileSidebarOpen && (
-        <div
-          role="presentation"
-          aria-hidden="true"
-          onClick={closeMobileSidebar}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden transition-opacity"
-        />
-      )}
-
-      {/* Mobile Drawer */}
-      <aside
-        id="mobile-sidebar"
-        role="navigation"
-        aria-label="Thanh điều hướng di động"
-        className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-card border-r border-border transition-transform duration-300 ease-in-out lg:hidden',
-          isMobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full',
-        )}
-      >
-        {/* Mobile Header */}
-        <div className="flex h-16 items-center justify-between border-b border-border px-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <Factory className="h-5 w-5" />
-            </div>
-            <div>
-              <span className="text-sm font-bold tracking-tight text-foreground">ITS-QLSX</span>
-              <p className="text-[10px] text-muted-foreground font-medium">Sản Xuất & Vận Hành</p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={closeMobileSidebar}
-            aria-label="Đóng thanh điều hướng"
-            className="rounded-lg text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {/* Mobile Nav Links */}
-        {renderNavList(true)}
-      </aside>
-
-      {/* Desktop Sidebar */}
+      {/* ======================================================== */}
+      {/* 1. DESKTOP SIDEBAR: CỐ ĐỊNH BÊN TRÁI, MƯỢT MÀ, KHÔNG MẤT  */}
+      {/* ======================================================== */}
       <aside
         id="desktop-sidebar"
         role="navigation"
         aria-label="Thanh điều hướng chính"
-        className={cn(
-          'hidden lg:flex flex-col border-r border-border bg-card shrink-0 transition-all duration-300 ease-in-out sticky top-0 h-screen',
-          isSidebarCollapsed ? 'w-18' : 'w-64',
-        )}
+        className="hidden md:flex flex-col shrink-0 border-r border-border bg-card/80 backdrop-blur-xs transition-all duration-200 select-none h-full overflow-hidden z-20 w-64 lg:w-72"
       >
-        {/* Desktop Brand Header */}
-        <div className="flex h-16 items-center justify-between border-b border-border px-4">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <Factory className="h-5 w-5" />
-            </div>
-            {!isSidebarCollapsed && (
-              <div className="truncate">
-                <span className="text-sm font-bold tracking-tight text-foreground">ITS-QLSX</span>
-                <p className="text-[10px] text-muted-foreground font-medium">Hệ Thống Quản Lý Sản Xuất</p>
-              </div>
-            )}
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={toggleSidebar}
-            id="desktop-sidebar-toggle"
-            aria-label={isSidebarCollapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'}
-            className="hidden lg:flex h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground shrink-0"
-          >
-            {isSidebarCollapsed ? <Menu className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          </Button>
-        </div>
 
-        {/* Desktop Nav Links */}
-        {renderNavList(false)}
+        {/* Navigation List */}
+        <div className="flex-1 overflow-y-auto p-2 pt-3 space-y-1">
+          {/* Direct link to Điều hành (Executive) - Không có nút xổ xuống */}
+          <NavLink
+            to="/"
+            className={cn(
+              'w-full flex items-center gap-2.5 p-2 rounded-xl text-xs font-bold transition-all cursor-pointer mb-2',
+              isExecutiveActive
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-foreground hover:bg-muted font-semibold',
+            )}
+          >
+            <div
+              className={cn(
+                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+                isExecutiveActive
+                  ? 'bg-white/20 text-white'
+                  : 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400',
+              )}
+            >
+              <Landmark className="h-4 w-4" />
+            </div>
+            <span className="truncate">Điều hành</span>
+          </NavLink>
+
+          <div className="my-1 border-t border-border/60" />
+
+          {/* Các Phòng Ban: Nút trực tiếp đến màn hình thao tác, KHÔNG XỔ XUỐNG */}
+          {departmentNavGroups.map((group) => {
+            const DeptIcon = group.deptIcon;
+            const deptPath = `/${group.id}`;
+            const isGroupActive =
+              location.pathname === deptPath ||
+              location.pathname.startsWith(`${deptPath}/`) ||
+              group.functions.some((fn) => {
+                const basePath = fn.path.split('?')[0] || fn.path;
+                return location.pathname === fn.path || location.pathname.startsWith(basePath);
+              });
+
+            return (
+              <NavLink
+                key={group.id}
+                to={deptPath}
+                className={cn(
+                  'w-full flex items-center gap-2.5 p-2 rounded-xl text-xs transition-all cursor-pointer',
+                  isGroupActive
+                    ? 'bg-primary/10 text-primary font-bold shadow-2xs'
+                    : 'text-foreground hover:bg-muted font-semibold',
+                )}
+              >
+                <div
+                  className={cn(
+                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg shadow-2xs ring-1 ring-border/40',
+                    group.iconBg,
+                  )}
+                >
+                  <DeptIcon className={cn('h-3.5 w-3.5', group.iconColor)} />
+                </div>
+                <span className="truncate">{group.shortName}</span>
+              </NavLink>
+            );
+          })}
+        </div>
       </aside>
+
+      {/* ======================================================== */}
+      {/* 2. MOBILE BOTTOM NAVBAR (5 NÚT + NÚT THÊM & TÙY CHỈNH)     */}
+      {/* ======================================================== */}
+      <MobileNav />
     </>
   );
 };
+

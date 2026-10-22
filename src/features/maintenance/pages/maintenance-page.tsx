@@ -150,31 +150,31 @@ export const MaintenancePage: React.FC = () => {
   const tabs = [
     {
       id: 'machines' as const,
-      label: 'Hồ sơ thiết bị',
+      label: 'Hồ Sơ Thiết Bị',
       icon: Cpu,
       count: metrics?.totalMachines,
     },
     {
       id: 'schedules' as const,
-      label: 'Lịch bảo dưỡng định kỳ',
+      label: 'Lịch Bảo Dưỡng Định Kỳ',
       icon: Calendar,
       count: metrics?.totalPlannedPMs,
     },
     {
       id: 'orders' as const,
-      label: 'Phiếu sửa chữa & Sự cố',
+      label: 'Phiếu Sửa Chữa & Sự Cố',
       icon: ClipboardList,
       count: metrics?.activeWorkOrders,
     },
     {
       id: 'adjustments' as const,
-      label: 'Cải tiến thiết bị',
+      label: 'Cải Tiến Thiết Bị',
       icon: GitCommit,
       count: totalAdjustments,
     },
     {
       id: 'spares' as const,
-      label: 'Kho phụ tùng & Linh kiện',
+      label: 'Kho Phụ Tùng & Linh Kiện',
       icon: Package,
     },
   ];

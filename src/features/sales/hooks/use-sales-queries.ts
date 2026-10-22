@@ -22,7 +22,9 @@ import {
   deletePurchaseOrder,
   receivePurchaseOrder,
   type ReceivePurchaseOrderParams,
+  dispatchSalesOrder,
   fetchSalesMetrics,
+  fetchSalesProcurementDashboardData,
   fetchProductOptions,
   fetchMaterialOptions,
 } from '../api/sales-api';
@@ -33,6 +35,7 @@ import type {
   PurchaseOrderFilterParams,
   SalesOrderStatus,
   PurchaseOrderStatus,
+  DispatchSalesOrderParams,
 } from '../types';
 import type {
   CustomerFormValues,
@@ -51,6 +54,7 @@ export const salesKeys = {
   purchaseOrders: (params: PurchaseOrderFilterParams) => ['sales', 'purchase-orders', params] as const,
   purchaseOrderDetail: (id: string) => ['sales', 'purchase-orders', 'detail', id] as const,
   metrics: () => ['sales', 'metrics'] as const,
+  dashboard: () => ['sales', 'dashboard'] as const,
   productOptions: () => ['sales', 'options', 'products'] as const,
   materialOptions: () => ['sales', 'options', 'materials'] as const,
 };
@@ -217,6 +221,26 @@ export function useDeleteSalesOrder() {
   });
 }
 
+export function useDispatchSalesOrder() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: (params: DispatchSalesOrderParams) => dispatchSalesOrder(params, user?.id),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['sales', 'orders'] });
+      queryClient.invalidateQueries({
+        queryKey: salesKeys.orderDetail(variables.sales_order_id),
+      });
+      queryClient.invalidateQueries({ queryKey: salesKeys.metrics() });
+      queryClient.invalidateQueries({ queryKey: ['inventory_transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory_stock_balance'] });
+      queryClient.invalidateQueries({ queryKey: ['stock_balance'] });
+      queryClient.invalidateQueries({ queryKey: ['warehouse_metrics'] });
+      queryClient.invalidateQueries({ queryKey: ['warehouses'] });
+    },
+  });
+}
+
 // ==========================================
 // PURCHASE ORDERS HOOKS
 // ==========================================
@@ -315,6 +339,14 @@ export function useSalesMetrics() {
   return useQuery({
     queryKey: salesKeys.metrics(),
     queryFn: fetchSalesMetrics,
+    staleTime: 60000,
+  });
+}
+
+export function useSalesProcurementDashboard() {
+  return useQuery({
+    queryKey: salesKeys.dashboard(),
+    queryFn: fetchSalesProcurementDashboardData,
     staleTime: 60000,
   });
 }

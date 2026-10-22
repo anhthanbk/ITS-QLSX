@@ -43,6 +43,10 @@ export const SalesOrderFormDialog: React.FC<SalesOrderFormDialogProps> = ({
     customer_id: order?.customer_id || (customers[0]?.id || ''),
     order_date: order?.order_date || (new Date().toISOString().split('T')[0] ?? ''),
     promised_delivery_date: order?.promised_delivery_date || '',
+    carrier_name: order?.carrier_name || '',
+    vehicle_plate: order?.vehicle_plate || '',
+    driver_info: order?.driver_info || '',
+    delivery_location: order?.delivery_location || '',
     currency: order?.currency || 'VND',
     tax_rate: order && order.subtotal_amount > 0 ? Math.round((order.tax_amount / order.subtotal_amount) * 100) : 10,
     payment_terms: order?.payment_terms || 'Thanh toán 30 ngày sau khi nhận hàng',
@@ -93,6 +97,10 @@ export const SalesOrderFormDialog: React.FC<SalesOrderFormDialogProps> = ({
         customer_id: order?.customer_id || (customers[0]?.id || ''),
         order_date: order?.order_date || (new Date().toISOString().split('T')[0] ?? ''),
         promised_delivery_date: order?.promised_delivery_date || '',
+        carrier_name: order?.carrier_name || '',
+        vehicle_plate: order?.vehicle_plate || '',
+        driver_info: order?.driver_info || '',
+        delivery_location: order?.delivery_location || '',
         currency: order?.currency || 'VND',
         tax_rate:
           order && order.subtotal_amount > 0
@@ -305,6 +313,59 @@ export const SalesOrderFormDialog: React.FC<SalesOrderFormDialogProps> = ({
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   placeholder="Ghi chú đơn hàng..."
                 />
+              </div>
+            </div>
+
+            {/* Logistics & Transportation Section */}
+            <div className="rounded-xl border border-border/80 bg-muted/20 p-4 space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+                <span>Thông tin điều vận & Giao nhận</span>
+              </h4>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    Đơn vị vận tải / Nhà xe
+                  </label>
+                  <input
+                    type="text"
+                    {...register('carrier_name')}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="VD: Cty Vận tải Hải Vân"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    Biển số xe / Phương tiện
+                  </label>
+                  <input
+                    type="text"
+                    {...register('vehicle_plate')}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-mono uppercase text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="VD: 79C-152.88"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    Tài xế & Số ĐT liên hệ
+                  </label>
+                  <input
+                    type="text"
+                    {...register('driver_info')}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="VD: Anh Hùng - 0914.xxx.xxx"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    Địa điểm / Cảng giao nhận
+                  </label>
+                  <input
+                    type="text"
+                    {...register('delivery_location')}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    placeholder="VD: Cảng Cam Ranh / Kho khách"
+                  />
+                </div>
               </div>
             </div>
 

@@ -7,6 +7,10 @@ import {
   Building2,
   FileQuestion,
   Plus,
+  Calendar,
+  ChevronUp,
+  ChevronDown,
+  LayoutDashboard,
 } from 'lucide-react';
 import { PageContainer } from '@/components/layout/page-container';
 import { Button } from '@/components/ui/button';
@@ -39,6 +43,7 @@ import type {
 // Queries & Mutations
 import {
   useSalesMetrics,
+  useSalesProcurementDashboard,
   useSalesOrders,
   useCreateSalesOrder,
   useUpdateSalesOrder,
@@ -63,6 +68,7 @@ import {
 
 // Components
 import { SalesMetricCards } from '../components/sales-metric-cards';
+import { SalesProcurementDashboard } from '../components/sales-procurement-dashboard';
 import { SalesOrderTable } from '../components/sales-order-table';
 import { SalesOrderFilterBar } from '../components/sales-order-filter-bar';
 import { SalesOrderFormDialog } from '../components/sales-order-form-dialog';
@@ -81,8 +87,11 @@ import { SupplierFormDialog } from '../components/supplier-form-dialog';
 import { SupplierDeleteDialog } from '../components/supplier-delete-dialog';
 import { ProcurementRequestPanel } from '../components/procurement-request-panel';
 import { PurchaseOrderReceiveDialog } from '../components/purchase-order-receive-dialog';
+import { SalesOrderDispatchDialog } from '../components/sales-order-dispatch-dialog';
+import { SalesDispatchCalendar } from '../components/sales-dispatch-calendar';
 
 export type SalesTab =
+  | 'dashboard'
   | 'orders'
   | 'customers'
   | 'procurement-orders'
@@ -128,15 +137,16 @@ export const SalesPage: React.FC = () => {
 
   // Determine active tab from current URL
   const getTabFromPath = (path: string, search?: string): SalesTab => {
-    // Check suppliers first to avoid prefix conflicts with /procurement/orders
+    if (search && search.includes('tab=dashboard')) return 'dashboard';
     if (search && search.includes('tab=suppliers')) return 'suppliers';
+    if (path.includes('/sales/dashboard')) return 'dashboard';
     if (path.includes('/sales/suppliers') || path.includes('/procurement/suppliers'))
       return 'suppliers';
     if (path.includes('/sales/customers')) return 'customers';
     if (path.includes('/procurement/orders')) return 'procurement-orders';
     if (path.includes('/procurement/requests')) return 'procurement-requests';
     if (path.includes('/sales/orders')) return 'orders';
-    return 'orders';
+    return 'dashboard';
   };
 
   const [activeTab, setActiveTab] = useState<SalesTab>(() =>
@@ -150,6 +160,9 @@ export const SalesPage: React.FC = () => {
   const handleTabChange = (tab: SalesTab) => {
     setActiveTab(tab);
     switch (tab) {
+      case 'dashboard':
+        navigate('/sales/dashboard');
+        break;
       case 'orders':
         navigate('/sales/orders');
         break;
@@ -168,8 +181,9 @@ export const SalesPage: React.FC = () => {
     }
   };
 
-  // Metrics & Catalogs
+  // Metrics, Dashboard & Catalogs
   const { data: metrics, isLoading: isMetricsLoading } = useSalesMetrics();
+  const { data: dashboardData, isLoading: isDashboardLoading } = useSalesProcurementDashboard();
   const { data: products = [] } = useProductOptions();
   const { data: materials = [] } = useMaterialOptions();
 
@@ -198,6 +212,21 @@ export const SalesPage: React.FC = () => {
   const [isSalesOrderFormOpen, setIsSalesOrderFormOpen] = useState(false);
   const [isSalesOrderDetailOpen, setIsSalesOrderDetailOpen] = useState(false);
   const [isSalesOrderDeleteOpen, setIsSalesOrderDeleteOpen] = useState(false);
+  const [isSalesOrderDispatchOpen, setIsSalesOrderDispatchOpen] = useState(false);
+  const [dispatchingSalesOrder, setDispatchingSalesOrder] = useState<SalesOrder | null>(null);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(true);
+
+  // Dedicated queries for master schedule calendar (fetching up to 100 orders for comprehensive month view)
+  const { data: calendarSalesData, isLoading: isCalendarSalesLoading } = useSalesOrders({
+    page: 1,
+    pageSize: 100,
+    status: 'all',
+  });
+  const { data: calendarPurchaseData, isLoading: isCalendarPurchaseLoading } = usePurchaseOrders({
+    page: 1,
+    pageSize: 100,
+    status: 'all',
+  });
 
   // 2. Customers State & Queries
   const [customerFilters, setCustomerFilters] = useState<CustomerFilterParams>({
@@ -364,6 +393,11 @@ export const SalesPage: React.FC = () => {
     }
   };
 
+  const handleOpenDispatchSalesOrder = (order: SalesOrder) => {
+    setDispatchingSalesOrder(order);
+    setIsSalesOrderDispatchOpen(true);
+  };
+
   // Handlers - Customers
   const handleSaveCustomer = async (values: CustomerFormValues) => {
     try {
@@ -486,6 +520,12 @@ export const SalesPage: React.FC = () => {
   // Page title and description depending on active tab
   const getPageMeta = () => {
     switch (activeTab) {
+      case 'dashboard':
+        return {
+          title: 'Tổng Quan Kinh Doanh & Mua Sắm (Command Center)',
+          description:
+            'Trung tâm chỉ huy điều hành kinh doanh bán cát, chuỗi cung ứng vật tư, cảnh báo tiến độ và dòng tiền',
+        };
       case 'customers':
         return {
           title: 'Khách Hàng & Đối Tác Thương Mại',
@@ -522,6 +562,38 @@ export const SalesPage: React.FC = () => {
       description={meta.description}
       actions={
         <div className="flex items-center gap-2">
+          {activeTab === 'dashboard' && (
+            <>
+              {canManageSales && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSelectedSalesOrder(null);
+                    setIsSalesOrderFormOpen(true);
+                  }}
+                  className="gap-1.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Tạo đơn bán</span>
+                </Button>
+              )}
+              {canManagePurchase && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedPurchaseOrder(null);
+                    setIsPurchaseOrderFormOpen(true);
+                  }}
+                  className="gap-1.5"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Lập đơn mua PO</span>
+                </Button>
+              )}
+            </>
+          )}
+
           {activeTab === 'orders' && canManageSales && (
             <Button
               size="sm"
@@ -581,11 +653,22 @@ export const SalesPage: React.FC = () => {
       }
     >
       <div className="space-y-6">
-        {/* KPI Metrics Summary */}
-        <SalesMetricCards metrics={metrics} isLoading={isMetricsLoading} />
-
         {/* Tab Navigation */}
         <div className="flex flex-wrap items-center gap-1.5 border-b border-border pb-3">
+          <button
+            type="button"
+            onClick={() => handleTabChange('dashboard')}
+            className={cn(
+              'flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-semibold transition-all',
+              activeTab === 'dashboard'
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+            )}
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            <span>Dashboard Kinh Doanh</span>
+          </button>
+
           <button
             type="button"
             onClick={() => handleTabChange('orders')}
@@ -597,7 +680,7 @@ export const SalesPage: React.FC = () => {
             )}
           >
             <ShoppingCart className="h-4 w-4" />
-            <span>Đơn hàng bán (SO)</span>
+            <span>Đơn Hàng Bán (SO)</span>
           </button>
 
           <button
@@ -611,7 +694,7 @@ export const SalesPage: React.FC = () => {
             )}
           >
             <Users className="h-4 w-4" />
-            <span>Danh mục Khách hàng</span>
+            <span>Danh Mục Khách Hàng</span>
           </button>
 
           <button
@@ -625,7 +708,7 @@ export const SalesPage: React.FC = () => {
             )}
           >
             <FileQuestion className="h-4 w-4" />
-            <span>Đề xuất mua sắm (PR)</span>
+            <span>Đề Xuất Mua Sắm (PR)</span>
           </button>
 
           <button
@@ -639,7 +722,7 @@ export const SalesPage: React.FC = () => {
             )}
           >
             <Truck className="h-4 w-4" />
-            <span>Đơn đặt mua NCC (PO)</span>
+            <span>Đơn Đặt Mua NCC (PO)</span>
           </button>
 
           <button
@@ -653,9 +736,103 @@ export const SalesPage: React.FC = () => {
             )}
           >
             <Building2 className="h-4 w-4" />
-            <span>Danh mục Nhà cung cấp</span>
+            <span>Danh Bạ Nhà Cung Cấp</span>
           </button>
         </div>
+
+        {/* Tab 0: Executive Command Center Dashboard */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-6">
+            <SalesProcurementDashboard
+              data={dashboardData}
+              isLoading={isDashboardLoading}
+              onNavigateTab={handleTabChange}
+              onOpenCreateSO={() => {
+                setSelectedSalesOrder(null);
+                setIsSalesOrderFormOpen(true);
+              }}
+              onOpenCreatePO={() => {
+                setSelectedPurchaseOrder(null);
+                setIsPurchaseOrderFormOpen(true);
+              }}
+              canManageSales={canManageSales}
+              canManagePurchase={canManagePurchase}
+            />
+
+            {/* Master Logistics Calendar integrated into Dashboard view */}
+            <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-foreground">
+                        Lịch Kế Hoạch Xuất - Nhập Hàng
+                      </h3>
+                      <span className="hidden sm:inline-flex rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+                        Tổng hợp SO & PO
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Theo dõi lịch xuất giao thành phẩm cho khách hàng và tiếp nhận nguyên vật liệu từ nhà cung cấp
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsCalendarOpen((prev) => !prev)}
+                  className="h-8 gap-1.5 text-xs font-semibold"
+                >
+                  {isCalendarOpen ? (
+                    <>
+                      <ChevronUp className="h-3.5 w-3.5" />
+                      <span>Thu gọn lịch</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="h-3.5 w-3.5" />
+                      <span>Mở rộng lịch kế hoạch</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {isCalendarOpen && (
+                <SalesDispatchCalendar
+                  salesOrders={calendarSalesData?.items || salesOrdersData?.items || []}
+                  purchaseOrders={calendarPurchaseData?.items || purchaseOrdersData?.items || []}
+                  customers={customersData?.items || []}
+                  suppliers={suppliersData?.items || []}
+                  isLoading={isCalendarSalesLoading || isCalendarPurchaseLoading}
+                  canManageSales={canManageSales}
+                  canManagePurchase={canManagePurchase}
+                  onViewSalesOrder={(order) => {
+                    setSelectedSalesOrder(order);
+                    setIsSalesOrderDetailOpen(true);
+                  }}
+                  onDispatchSalesOrder={handleOpenDispatchSalesOrder}
+                  onViewPurchaseOrder={(order) => {
+                    setSelectedPurchaseOrder(order);
+                    setIsPurchaseOrderDetailOpen(true);
+                  }}
+                  onReceivePurchaseOrder={(order) => {
+                    setReceivingPurchaseOrder(order);
+                    setIsPurchaseOrderReceiveOpen(true);
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Operational Tabs Header Context: KPI metrics only (Calendar removed from operational views per requirement) */}
+        {activeTab !== 'dashboard' && (
+          <SalesMetricCards metrics={metrics} isLoading={isMetricsLoading} />
+        )}
 
         {/* Tab 1: Sales Orders */}
         {activeTab === 'orders' && (
@@ -698,6 +875,7 @@ export const SalesPage: React.FC = () => {
                 setSelectedSalesOrder(order);
                 setIsSalesOrderDeleteOpen(true);
               }}
+              onDispatch={handleOpenDispatchSalesOrder}
               onStatusChange={handleUpdateSalesOrderStatus}
               onRetry={refetchSalesOrders}
             />
@@ -958,6 +1136,19 @@ export const SalesPage: React.FC = () => {
         }}
         onSuccess={() => {
           refetchPurchaseOrders();
+        }}
+      />
+
+      {/* 12. Sales Order Dispatch Goods Dialog */}
+      <SalesOrderDispatchDialog
+        isOpen={isSalesOrderDispatchOpen}
+        order={dispatchingSalesOrder}
+        onClose={() => {
+          setIsSalesOrderDispatchOpen(false);
+          setDispatchingSalesOrder(null);
+        }}
+        onSuccess={() => {
+          refetchSalesOrders();
         }}
       />
     </PageContainer>

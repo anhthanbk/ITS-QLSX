@@ -718,4 +718,122 @@ export interface IncidentAIInsight {
   }>;
 }
 
+// 7. Production QR Area Patrols & Incident Reporting
+export type PatrolResolutionType = 'resolved' | 'temporary_fix' | 'maintenance_scheduled';
+export type PatrolIncidentStatus = 'reported' | 'in_progress' | 'resolved' | 'closed';
+
+export interface PatrolAreaMachineItem {
+  id: string;
+  machine_id: string;
+  machine_code: string;
+  machine_name: string;
+  sort_order: number;
+  inspection_notes: string | null;
+}
+
+export interface PatrolArea {
+  id: string;
+  area_code: string;
+  name: string;
+  line_id: string | null;
+  line_name?: string;
+  qr_code: string;
+  description: string | null;
+  order_index: number;
+  is_active: boolean;
+  machines?: PatrolAreaMachineItem[];
+}
+
+export interface PatrolIncident {
+  id: string;
+  incident_code: string;
+  patrol_log_id: string | null;
+  area_id: string | null;
+  area_name?: string;
+  machine_id: string;
+  machine_code?: string;
+  machine_name?: string;
+  shift_id: string | null;
+  reported_at: string;
+  reporter_name: string;
+  condition_type: string;
+  description: string;
+  resolution_type: PatrolResolutionType;
+  maintenance_work_order_id: string | null;
+  work_order_number?: string;
+  work_order_status?: string;
+  status: PatrolIncidentStatus;
+  incident_image_url?: string | null;
+  resolution_image_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PatrolLog {
+  id: string;
+  area_id: string;
+  area_code?: string;
+  area_name?: string;
+  shift_id: string | null;
+  scanned_at: string;
+  inspector_name: string;
+  has_issue: boolean;
+  checked_machines_count: number;
+  notes: string | null;
+  created_at: string;
+  incidents?: PatrolIncident[];
+}
+
+export interface QuickIncidentFormValues {
+  area_id: string;
+  machine_id: string;
+  condition_type: string;
+  description: string;
+  resolution_type: PatrolResolutionType;
+  reporter_name: string;
+  notes?: string;
+  incident_image_url?: string | null;
+  resolution_image_url?: string | null;
+  existing_work_order_id?: string | null;
+  create_new_work_order?: boolean;
+}
+
+export interface PatrolFilterParams {
+  areaId?: string;
+  hasIssue?: 'all' | 'normal' | 'has_issue';
+  resolutionType?: 'all' | PatrolResolutionType;
+  fromDate?: string;
+  toDate?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PatrolAreaMachineAssignment {
+  machine_id: string;
+  sort_order: number;
+  inspection_notes?: string;
+}
+
+export interface PatrolAreaFormValues {
+  area_code: string;
+  name: string;
+  line_id: string | null;
+  qr_code: string;
+  description?: string;
+  order_index?: number;
+  is_active?: boolean;
+  machines: PatrolAreaMachineAssignment[];
+}
+
+export interface AvailableMachineItem {
+  id: string;
+  machine_code: string;
+  name: string;
+  line_id: string | null;
+  status: string;
+}
+
+
+
 

@@ -9,6 +9,7 @@ import {
   PackageCheck,
   AlertTriangle,
   Loader2,
+  LayoutDashboard,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageContainer } from '@/components/layout/page-container';
@@ -34,6 +35,7 @@ import {
   useCreateProduct,
   useUpdateProduct,
   useDeleteProduct,
+  useMaterialDashboardData,
 } from '../hooks';
 import type { Warehouse, InventoryStockBalance, MaterialCatalogItem, ProductCatalogItem, InventoryTransaction } from '../types';
 import type {
@@ -60,9 +62,11 @@ import {
   ProductCatalogTable,
   ProductFormDialog,
   ProductDeleteDialog,
+  MaterialInventoryDashboard,
 } from '../components';
 
 export type WarehouseTab =
+  | 'material-dashboard'
   | 'stock'
   | 'transactions'
   | 'products'
@@ -96,12 +100,14 @@ export const WarehousePage: React.FC = () => {
 
   // Determine active tab from URL
   const getTabFromPath = (path: string): WarehouseTab => {
+    if (path.includes('/warehouse/material-dashboard') || path.includes('/warehouse/materials-dashboard'))
+      return 'material-dashboard';
     if (path.includes('/warehouse/transactions')) return 'transactions';
     if (path.includes('/warehouse/products')) return 'products';
     if (path.includes('/warehouse/materials')) return 'materials';
     if (path.includes('/warehouse/inventory')) return 'inventory';
     if (path.includes('/warehouse/locations')) return 'locations';
-    return 'stock';
+    return 'material-dashboard';
   };
 
   const [activeTab, setActiveTab] = useState<WarehouseTab>(getTabFromPath(location.pathname));
@@ -115,8 +121,14 @@ export const WarehousePage: React.FC = () => {
     navigate(`/warehouse/${tab}`);
   };
 
-  // Dashboard Metrics
+  // Dashboard Metrics & Material Health Data
   const { data: metrics, isLoading: isMetricsLoading } = useWarehouseMetrics();
+  const {
+    data: materialDashboardData,
+    isLoading: isMaterialDashboardLoading,
+    isError: isMaterialDashboardError,
+    refetch: refetchMaterialDashboard,
+  } = useMaterialDashboardData();
 
   // 1. Warehouse List state
   const [warehouseSearch, setWarehouseSearch] = useState('');
@@ -382,16 +394,22 @@ export const WarehousePage: React.FC = () => {
   };
 
   const tabs = [
-    { id: 'stock' as const, label: 'Báo cáo tồn kho', icon: Layers },
-    { id: 'transactions' as const, label: 'Nhập / Xuất kho', icon: Truck },
-    { id: 'products' as const, label: 'Sản phẩm & Thành phẩm', icon: PackageCheck },
-    { id: 'materials' as const, label: 'Vật tư & NVL', icon: Boxes },
-    { id: 'inventory' as const, label: 'Kiểm kê định kỳ', icon: ClipboardCheck },
-    { id: 'locations' as const, label: 'Kho lưu trữ', icon: WarehouseIcon },
+    { id: 'material-dashboard' as const, label: 'Dashboard Vật Tư', icon: LayoutDashboard },
+    { id: 'stock' as const, label: 'Báo Cáo Tồn Kho', icon: Layers },
+    { id: 'materials' as const, label: 'Vật Tư & NVL', icon: Boxes },
+    { id: 'products' as const, label: 'Sản Phẩm & Thành Phẩm', icon: PackageCheck },
+    { id: 'transactions' as const, label: 'Nhập / Xuất Kho', icon: Truck },
+    { id: 'inventory' as const, label: 'Kiểm Kê Định Kỳ', icon: ClipboardCheck },
+    { id: 'locations' as const, label: 'Kho Lưu Trữ', icon: WarehouseIcon },
   ];
 
   const getPageHeader = () => {
     switch (activeTab) {
+      case 'material-dashboard':
+        return {
+          title: 'Dashboard Điều Hành Kho Vật Tư',
+          description: 'Giám sát chỉ số an toàn tồn kho, cảnh báo thiếu hụt nguyên phụ liệu khẩn cấp và luân chuyển cấp phát',
+        };
       case 'transactions':
         return {
           title: 'Lịch sử Nhập / Xuất kho',
@@ -433,8 +451,10 @@ export const WarehousePage: React.FC = () => {
       description={pageHeader.description}
     >
       <div className="space-y-5">
-        {/* Metric Cards */}
-        <WarehouseMetricCards metrics={metrics} isLoading={isMetricsLoading} />
+        {/* Metric Cards - Hidden on material-dashboard to avoid redundancy with specialized KPI cards */}
+        {activeTab !== 'material-dashboard' && (
+          <WarehouseMetricCards metrics={metrics} isLoading={isMetricsLoading} />
+        )}
 
         {/* Tab Navigation */}
         <div className="flex flex-wrap items-center gap-2 border-b border-border pb-px">
@@ -459,6 +479,22 @@ export const WarehousePage: React.FC = () => {
             );
           })}
         </div>
+
+        {/* TAB 0: MATERIAL DASHBOARD */}
+        {activeTab === 'material-dashboard' && (
+          <MaterialInventoryDashboard
+            data={materialDashboardData}
+            isLoading={isMaterialDashboardLoading}
+            isError={isMaterialDashboardError}
+            onRetry={refetchMaterialDashboard}
+            canTransact={canTransact}
+            onOpenInbound={handleOpenCreateTx}
+            onOpenOutbound={handleOpenCreateTx}
+            onOpenAdjustment={() => handleTabChange('inventory')}
+            onNavigateToCatalog={() => handleTabChange('materials')}
+            onNavigateToRequests={() => navigate('/procurement/requests')}
+          />
+        )}
 
         {/* TAB 1: STOCK BALANCES */}
         {activeTab === 'stock' && (

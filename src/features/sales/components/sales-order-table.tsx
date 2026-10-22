@@ -8,6 +8,7 @@ import {
   FileText,
   AlertCircle,
   RefreshCw,
+  Truck,
 } from 'lucide-react';
 import type { SalesOrder, PaginatedResult, SalesOrderStatus } from '../types';
 import { StatusBadge } from './sales-status-badge';
@@ -24,6 +25,7 @@ interface SalesOrderTableProps {
   onViewDetail: (order: SalesOrder) => void;
   onEdit: (order: SalesOrder) => void;
   onDelete: (order: SalesOrder) => void;
+  onDispatch?: (order: SalesOrder) => void;
   onStatusChange: (order: SalesOrder, status: SalesOrderStatus) => void;
   onRetry?: () => void;
 }
@@ -38,6 +40,7 @@ export const SalesOrderTable: React.FC<SalesOrderTableProps> = ({
   onViewDetail,
   onEdit,
   onDelete,
+  onDispatch,
   onStatusChange,
   onRetry,
 }) => {
@@ -91,6 +94,7 @@ export const SalesOrderTable: React.FC<SalesOrderTableProps> = ({
             <tr>
               <th className="px-4 py-3">Mã đơn (SO)</th>
               <th className="px-4 py-3">Khách hàng</th>
+              <th className="px-4 py-3">Vận tải & Phương tiện</th>
               <th className="px-4 py-3">Ngày đặt</th>
               <th className="px-4 py-3">Hạn giao hàng</th>
               <th className="px-4 py-3 text-right">Tổng tiền</th>
@@ -104,16 +108,17 @@ export const SalesOrderTable: React.FC<SalesOrderTableProps> = ({
                 <tr key={i} className="animate-pulse">
                   <td className="px-4 py-4"><div className="h-4 w-24 bg-muted rounded" /></td>
                   <td className="px-4 py-4"><div className="h-4 w-36 bg-muted rounded" /></td>
+                  <td className="px-4 py-4"><div className="h-4 w-28 bg-muted rounded" /></td>
                   <td className="px-4 py-4"><div className="h-4 w-20 bg-muted rounded" /></td>
                   <td className="px-4 py-4"><div className="h-4 w-20 bg-muted rounded" /></td>
                   <td className="px-4 py-4 text-right"><div className="h-4 w-28 bg-muted rounded ml-auto" /></td>
                   <td className="px-4 py-4"><div className="h-6 w-24 bg-muted rounded-full" /></td>
-                  <td className="px-4 py-4"><div className="h-8 w-20 bg-muted rounded mx-auto" /></td>
+                  <td className="px-4 py-4"><div className="h-8 w-24 bg-muted rounded mx-auto" /></td>
                 </tr>
               ))
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
                   <FileText className="mx-auto h-10 w-10 text-muted-foreground/40 mb-3" />
                   <p className="text-base font-medium text-foreground">Không có đơn hàng nào</p>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -145,8 +150,24 @@ export const SalesOrderTable: React.FC<SalesOrderTableProps> = ({
                     <div className="font-medium">{order.customer?.name || 'Khách hàng ẩn'}</div>
                     <div className="text-xs text-muted-foreground">
                       Mã: {order.customer?.code || '-'}
-                      {order.customer?.phone && ` • ${order.customer.phone}`}
+                      {order.customer?.phone && ` • ${order.customer?.phone}`}
                     </div>
+                  </td>
+                  <td className="px-4 py-3.5 text-xs text-muted-foreground">
+                    {order.carrier_name || order.vehicle_plate ? (
+                      <div>
+                        <div className="font-medium text-foreground truncate max-w-[170px]" title={order.carrier_name || ''}>
+                          {order.carrier_name || 'Xe vận chuyển'}
+                        </div>
+                        {order.vehicle_plate && (
+                          <div className="font-mono text-[11px] text-primary font-semibold">
+                            BS: {order.vehicle_plate}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground/50 italic">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3.5 text-muted-foreground">
                     {formatDate(order.order_date)}
@@ -179,6 +200,18 @@ export const SalesOrderTable: React.FC<SalesOrderTableProps> = ({
                   </td>
                   <td className="px-4 py-3.5 text-center">
                     <div className="flex items-center justify-center gap-1.5">
+                      {canManage && order.status !== 'cancelled' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => onDispatch?.(order)}
+                          className="h-8 gap-1.5 px-2 text-xs font-semibold border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                          title="Lập phiếu xuất kho giao hàng cho đơn này"
+                        >
+                          <Truck className="h-3.5 w-3.5" />
+                          <span>Xuất kho</span>
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"

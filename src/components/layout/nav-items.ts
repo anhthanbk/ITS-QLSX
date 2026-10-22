@@ -3,13 +3,11 @@ import {
   Landmark,
   Factory,
   Warehouse,
-  ShieldCheck,
   Wrench,
-  ShieldAlert,
   ShoppingCart,
-  DollarSign,
   Users,
   Settings,
+  LayoutGrid,
 } from 'lucide-react';
 
 export interface NavSubItem {
@@ -32,32 +30,25 @@ export interface NavItem {
 }
 
 export const navigationItems: NavItem[] = [
-  // 1. Ban Giám Đốc (Executive / Dashboard)
+  // 0. Cổng chức năng AppSheet Portal Hub
+  {
+    id: 'portal-hub',
+    title: 'Cổng chức năng (Portal Hub)',
+    path: '/',
+    icon: LayoutGrid,
+  },
+
+  // 1. Điều Hành (Executive)
   {
     id: 'dashboard',
-    title: 'Ban Giám Đốc',
-    path: '/',
+    title: 'Điều hành',
+    path: '/executive/overview',
     icon: Landmark,
     children: [
       {
         id: 'executive-overview',
         title: 'Tổng quan điều hành',
-        path: '/',
-      },
-      {
-        id: 'executive-oee',
-        title: 'Giám sát OEE & Sản lượng',
-        path: '/executive/oee',
-      },
-      {
-        id: 'executive-approvals',
-        title: 'Phê duyệt & Đề xuất',
-        path: '/executive/approvals',
-      },
-      {
-        id: 'executive-reports',
-        title: 'Báo cáo điều hành & KPI',
-        path: '/executive/reports',
+        path: '/executive/overview',
       },
     ],
   },
@@ -79,29 +70,35 @@ export const navigationItems: NavItem[] = [
     children: [
       {
         id: 'production-annual-plan',
-        title: 'Kế hoạch sản xuất năm',
+        title: 'Kế hoạch',
         path: '/production/annual-plan',
         requiredPermission: ['production.plan.view', 'production.plan.read'],
       },
       {
         id: 'production-shifts',
-        title: 'Theo dõi ca & nhập liệu',
+        title: 'Nhập liệu',
         path: '/production/shifts',
         requiredPermission: ['production.shift.view', 'production.shift.read'],
       },
       {
+        id: 'production-patrols',
+        title: 'Tuần kiểm',
+        path: '/production/patrols',
+        requiredPermission: ['production.shift.view', 'production.shift.read'],
+      },
+      {
         id: 'production-incidents',
-        title: 'Thống kê sự cố & Pareto',
+        title: 'Downtime',
         path: '/production/incidents',
         requiredPermission: ['production.shift.view', 'production.shift.read'],
       },
     ],
   },
 
-  // 3. Kho & Vật Tư (Warehouse)
+  // 3. Kho Vận (Warehouse & Logistics)
   {
     id: 'warehouse',
-    title: 'Kho & Vật tư',
+    title: 'Kho vận',
     path: '/warehouse',
     icon: Warehouse,
     requiredPermission: ['warehouse.view', 'warehouse.stock.view'],
@@ -114,19 +111,19 @@ export const navigationItems: NavItem[] = [
       },
       {
         id: 'warehouse-transactions',
-        title: 'Nhập / Xuất kho',
+        title: 'Biên bản giao nhận & Nhập xuất',
         path: '/warehouse/transactions',
         requiredPermission: 'warehouse.transaction.create',
       },
       {
         id: 'warehouse-products',
-        title: 'Danh mục sản phẩm & TP',
+        title: 'Danh mục sản phẩm & BTP',
         path: '/warehouse/products',
         requiredPermission: 'warehouse.stock.view',
       },
       {
         id: 'warehouse-materials',
-        title: 'Danh mục vật tư & NVL',
+        title: 'Danh mục vật tư & hóa chất',
         path: '/warehouse/materials',
         requiredPermission: 'warehouse.stock.view',
       },
@@ -136,62 +133,27 @@ export const navigationItems: NavItem[] = [
         path: '/warehouse/inventory',
         requiredPermission: 'warehouse.view',
       },
-      {
-        id: 'warehouse-locations',
-        title: 'Danh mục kho lưu trữ',
-        path: '/warehouse/locations',
-        requiredPermission: 'warehouse.view',
-      },
     ],
   },
 
-  // 4. Quản Lý Chất Lượng - QC (Quality Control)
-  {
-    id: 'quality',
-    title: 'QC - Quản lý chất lượng',
-    path: '/quality',
-    icon: ShieldCheck,
-    requiredPermission: 'quality.inspection.view',
-    children: [
-      {
-        id: 'quality-incoming',
-        title: 'Kiểm tra NVL đầu vào',
-        path: '/quality/incoming',
-        requiredPermission: 'quality.inspection.view',
-      },
-      {
-        id: 'quality-process',
-        title: 'Kiểm tra công đoạn & TP',
-        path: '/quality/process',
-        requiredPermission: 'quality.inspection.view',
-      },
-      {
-        id: 'quality-ncr',
-        title: 'Sự cố không phù hợp (NCR)',
-        path: '/quality/ncr',
-        requiredPermission: 'quality.inspection.view',
-      },
-      {
-        id: 'quality-standards',
-        title: 'Tiêu chuẩn & Hồ sơ KCS',
-        path: '/quality/standards',
-        requiredPermission: 'quality.inspection.view',
-      },
-    ],
-  },
-
-  // 5. Bảo Trì & Cơ Điện (Maintenance)
+  // 4. Bảo Trì (Maintenance)
   {
     id: 'maintenance',
-    title: 'Bảo trì & Cơ điện',
+    title: 'Bảo trì',
     path: '/maintenance',
     icon: Wrench,
     requiredPermission: 'maintenance.machine.view',
     children: [
       {
         id: 'maintenance-machines',
-        title: 'Danh mục thiết bị',
+        title: 'Danh mục thiết bị máy móc',
         path: '/maintenance/machines',
+        requiredPermission: 'maintenance.machine.view',
+      },
+      {
+        id: 'maintenance-orders',
+        title: 'Phiếu sửa chữa (Work Orders)',
+        path: '/maintenance/orders',
         requiredPermission: 'maintenance.machine.view',
       },
       {
@@ -201,71 +163,36 @@ export const navigationItems: NavItem[] = [
         requiredPermission: 'maintenance.schedule.view',
       },
       {
-        id: 'maintenance-orders',
-        title: 'Phiếu sửa chữa & sự cố',
-        path: '/maintenance/orders',
-        requiredPermission: 'maintenance.machine.view',
-      },
-      {
-        id: 'maintenance-adjustments',
-        title: 'Cải tiến thiết bị',
-        path: '/maintenance/adjustments',
-        requiredPermission: 'maintenance.machine.view',
-      },
-      {
         id: 'maintenance-spares',
         title: 'Kho phụ tùng & linh kiện',
         path: '/maintenance/spares',
         requiredPermission: 'maintenance.machine.view',
       },
-    ],
-  },
-
-  // 6. An Toàn & Môi Trường (HSSE)
-  {
-    id: 'hsse',
-    title: 'HSSE - An toàn & Môi trường',
-    path: '/hsse',
-    icon: ShieldAlert,
-    requiredPermission: 'hsse.incident.view',
-    children: [
       {
-        id: 'hsse-safety',
-        title: 'An toàn hiện trường',
-        path: '/hsse/safety',
-        requiredPermission: 'hsse.incident.view',
-      },
-      {
-        id: 'hsse-incidents',
-        title: 'Báo cáo sự cố & rủi ro',
-        path: '/hsse/incidents',
-        requiredPermission: 'hsse.incident.view',
-      },
-      {
-        id: 'hsse-environment',
-        title: 'Quan trắc môi trường & khí thải',
-        path: '/hsse/environment',
-        requiredPermission: 'hsse.incident.view',
-      },
-      {
-        id: 'hsse-permits',
-        title: 'Cấp phép làm việc (PTW)',
-        path: '/hsse/permits',
-        requiredPermission: 'hsse.incident.view',
+        id: 'maintenance-adjustments',
+        title: 'Cải tiến & hiệu chỉnh máy',
+        path: '/maintenance/adjustments',
+        requiredPermission: 'maintenance.machine.view',
       },
     ],
   },
 
-  // 7. Kinh Doanh - Mua Sắm (Sales & Procurement)
+  // 5. Kinh Doanh (Sales & Procurement)
   {
     id: 'sales',
-    title: 'Kinh doanh & Mua sắm',
+    title: 'Kinh doanh',
     path: '/sales',
     icon: ShoppingCart,
     children: [
       {
+        id: 'sales-dashboard',
+        title: 'Dashboard Kinh Doanh',
+        path: '/sales/dashboard',
+        requiredPermission: 'sales.order.view',
+      },
+      {
         id: 'sales-orders',
-        title: 'Đơn hàng & hợp đồng',
+        title: 'Kế hoạch bán hàng & Đơn hàng',
         path: '/sales/orders',
         requiredPermission: 'sales.order.view',
       },
@@ -275,66 +202,13 @@ export const navigationItems: NavItem[] = [
         path: '/sales/customers',
         requiredPermission: 'sales.order.view',
       },
-      {
-        id: 'procurement-requests',
-        title: 'Đề xuất mua sắm (PR)',
-        path: '/procurement/requests',
-        requiredPermission: 'sales.order.view',
-      },
-      {
-        id: 'procurement-orders',
-        title: 'Đơn đặt hàng NCC (PO)',
-        path: '/procurement/orders',
-        requiredPermission: 'sales.order.view',
-      },
-      {
-        id: 'procurement-suppliers',
-        title: 'Danh mục Nhà cung cấp',
-        path: '/procurement/suppliers',
-        requiredPermission: 'sales.order.view',
-      },
     ],
   },
 
-  // 8. Tài Chính - Kế Toán - TCKT (Finance & Accounting)
-  {
-    id: 'finance',
-    title: 'TCKT - Tài chính Kế toán',
-    path: '/finance',
-    icon: DollarSign,
-    requiredPermission: 'finance.costing.view',
-    children: [
-      {
-        id: 'finance-costing',
-        title: 'Giá thành sản xuất theo lô',
-        path: '/finance/costing',
-        requiredPermission: 'finance.costing.view',
-      },
-      {
-        id: 'finance-budget',
-        title: 'Chi phí thực tế & ngân sách',
-        path: '/finance/budget',
-        requiredPermission: 'finance.costing.view',
-      },
-      {
-        id: 'finance-assets',
-        title: 'Tài sản cố định & khấu hao',
-        path: '/finance/assets',
-        requiredPermission: 'finance.costing.view',
-      },
-      {
-        id: 'finance-reports',
-        title: 'Báo cáo tài chính quản trị',
-        path: '/finance/reports',
-        requiredPermission: 'finance.costing.view',
-      },
-    ],
-  },
-
-  // 9. Nhân Sự & Tổ Chức - HR
+  // 6. Nhân Sự - HR
   {
     id: 'hr',
-    title: 'HR - Nhân sự & Tổ chức',
+    title: 'Nhân sự',
     path: '/hr',
     icon: Users,
     requiredPermission: ['hr.employee.read', 'master_data.read'],
@@ -346,12 +220,6 @@ export const navigationItems: NavItem[] = [
         requiredPermission: 'hr.employee.read',
       },
       {
-        id: 'hr-pending',
-        title: 'Chờ xét duyệt tài khoản',
-        path: '/hr?tab=pending',
-        requiredPermission: 'hr.employee.read',
-      },
-      {
         id: 'hr-departments',
         title: 'Cơ cấu phòng ban',
         path: '/hr?tab=departments',
@@ -359,17 +227,23 @@ export const navigationItems: NavItem[] = [
       },
       {
         id: 'hr-positions',
-        title: 'Chức danh & cấp bậc',
+        title: 'Chức danh & vị trí',
         path: '/hr?tab=positions',
         requiredPermission: 'master_data.read',
+      },
+      {
+        id: 'hr-pending',
+        title: 'Xét duyệt tài khoản',
+        path: '/hr?tab=pending',
+        requiredPermission: 'hr.employee.read',
       },
     ],
   },
 
-  // 10. Quản Trị Hệ Thống (Dành riêng cho Admin)
+  // 7. Hệ Thống (Dành riêng cho Admin)
   {
     id: 'admin',
-    title: 'Quản trị hệ thống',
+    title: 'Hệ thống',
     path: '/admin',
     icon: Settings,
     requiredRole: 'admin',

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Users, UserCheck, Clock, Building2, Trash2 } from 'lucide-react';
 import { PageContainer } from '@/components/layout/page-container';
 import { EmployeeFilterBar } from '../components/employee-filter-bar';
@@ -21,8 +22,32 @@ import type { EmployeeFormValues } from '../validation/hr-schemas';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+export type HRTab = 'employees' | 'pending' | 'departments' | 'positions';
+
 export const HRPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'employees' | 'pending' | 'departments' | 'positions'>('employees');
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const getTabFromPath = (path: string, search?: string): HRTab => {
+    if (path.includes('/hr/approvals') || (search && search.includes('pending'))) return 'pending';
+    if (path.includes('/hr/departments') || (search && search.includes('departments'))) return 'departments';
+    if (path.includes('/hr/positions') || (search && search.includes('positions'))) return 'positions';
+    return 'employees';
+  };
+
+  const [activeTab, setActiveTab] = useState<HRTab>(() => getTabFromPath(location.pathname, location.search));
+
+  useEffect(() => {
+    setActiveTab(getTabFromPath(location.pathname, location.search));
+  }, [location.pathname, location.search]);
+
+  const handleTabChange = (tab: HRTab) => {
+    setActiveTab(tab);
+    if (tab === 'pending') navigate('/hr/approvals');
+    else if (tab === 'departments') navigate('/hr/departments');
+    else if (tab === 'positions') navigate('/hr/positions');
+    else navigate('/hr/employees');
+  };
 
   // Filter and pagination state
   const [filters, setFilters] = useState<EmployeeFilterParams>({
@@ -163,7 +188,7 @@ export const HRPage: React.FC = () => {
           <button
             type="button"
             id="tab-employees"
-            onClick={() => setActiveTab('employees')}
+            onClick={() => handleTabChange('employees')}
             className={cn(
               'px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors -mb-px',
               activeTab === 'employees'
@@ -176,7 +201,7 @@ export const HRPage: React.FC = () => {
           <button
             type="button"
             id="tab-pending"
-            onClick={() => setActiveTab('pending')}
+            onClick={() => handleTabChange('pending')}
             className={cn(
               'px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors -mb-px flex items-center gap-1.5',
               activeTab === 'pending'
@@ -194,7 +219,7 @@ export const HRPage: React.FC = () => {
           <button
             type="button"
             id="tab-departments"
-            onClick={() => setActiveTab('departments')}
+            onClick={() => handleTabChange('departments')}
             className={cn(
               'px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors -mb-px',
               activeTab === 'departments'
@@ -207,7 +232,7 @@ export const HRPage: React.FC = () => {
           <button
             type="button"
             id="tab-positions"
-            onClick={() => setActiveTab('positions')}
+            onClick={() => handleTabChange('positions')}
             className={cn(
               'px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors -mb-px',
               activeTab === 'positions'

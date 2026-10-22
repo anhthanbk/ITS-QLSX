@@ -68,6 +68,10 @@ export interface SalesOrder {
   customer_id: string;
   order_date: string;
   promised_delivery_date: string | null;
+  carrier_name?: string | null;
+  vehicle_plate?: string | null;
+  driver_info?: string | null;
+  delivery_location?: string | null;
   currency: string;
   subtotal_amount: number;
   tax_amount: number;
@@ -274,3 +278,94 @@ export const INITIAL_REQUESTS: ProcurementRequest[] = [
     created_at: new Date(Date.now() - 86400000 * 6).toISOString(),
   },
 ];
+
+export interface DispatchSOItemInput {
+  order_item_id: string;
+  product_id: string;
+  dispatch_quantity: number;
+  unit_price: number;
+}
+
+export interface DispatchSalesOrderParams {
+  sales_order_id: string;
+  order_code: string;
+  warehouse_id: string;
+  dispatch_number?: string;
+  dispatch_date?: string;
+  carrier_name?: string;
+  vehicle_plate?: string;
+  driver_info?: string;
+  delivery_location?: string;
+  weighbridge_ticket_number?: string;
+  notes?: string;
+  items: DispatchSOItemInput[];
+}
+
+export interface SalesProcurementKPIs {
+  totalSalesRevenue: number;
+  totalPurchaseCost: number;
+  grossCommercialMargin: number;
+  commercialMarginRate: number;
+  salesOrdersCount: number;
+  confirmedSalesOrdersCount: number;
+  salesDeliveryRate: number;
+  purchaseOrdersCount: number;
+  receivedPurchaseOrdersCount: number;
+  purchaseFulfillmentRate: number;
+  pendingSOActionCount: number;
+  pendingPOReceiveCount: number;
+  pendingPRReviewCount: number;
+  activeCustomersCount: number;
+  activeSuppliersCount: number;
+}
+
+export interface SalesActionAlert {
+  id: string;
+  type:
+    | 'so_urgent_delivery'
+    | 'po_overdue_delivery'
+    | 'pr_pending_approval'
+    | 'customer_credit_warning';
+  title: string;
+  description: string;
+  severity: 'critical' | 'warning' | 'info';
+  targetId: string;
+  targetCode: string;
+  date: string;
+  amount?: number;
+  partnerName?: string;
+}
+
+export interface SalesFunnelStage {
+  stage: SalesOrderStatus;
+  label: string;
+  count: number;
+  amount: number;
+  color: string;
+}
+
+export interface TopPartnerSummary {
+  id: string;
+  code: string;
+  name: string;
+  totalAmount: number;
+  orderCount: number;
+  type: 'customer' | 'supplier';
+  percentage: number;
+}
+
+export interface CarrierLogisticsSummary {
+  carrierName: string;
+  activeOrdersCount: number;
+  recentVehiclePlate?: string;
+  recentDeliveryDate?: string;
+}
+
+export interface SalesProcurementDashboardData {
+  kpis: SalesProcurementKPIs;
+  alerts: SalesActionAlert[];
+  funnelStages: SalesFunnelStage[];
+  topCustomers: TopPartnerSummary[];
+  topSuppliers: TopPartnerSummary[];
+  carriers: CarrierLogisticsSummary[];
+}

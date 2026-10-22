@@ -161,6 +161,36 @@ describe('Sales and Purchase Schemas', () => {
       const result = salesOrderItemSchema.safeParse(invalidItem);
       expect(result.success).toBe(false);
     });
+
+    it('accepts sales order with logistics and transport information', () => {
+      const valid = {
+        order_code: 'SO-LOGISTICS-001',
+        customer_id: validCustomerId,
+        order_date: '2026-10-17',
+        status: 'confirmed' as const,
+        carrier_name: 'Công ty Vận tải Hải Vân',
+        vehicle_plate: '29C-888.99',
+        driver_info: 'Nguyễn Văn Tài - 0987654321',
+        delivery_location: 'Kho tổng Viglacera Bắc Ninh',
+        items: [
+          {
+            product_id: validProductId,
+            quantity: 500,
+            unit_price: 150000,
+            line_total: 75000000,
+          },
+        ],
+      };
+
+      const result = salesOrderSchema.safeParse(valid);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.carrier_name).toBe('Công ty Vận tải Hải Vân');
+        expect(result.data.vehicle_plate).toBe('29C-888.99');
+        expect(result.data.driver_info).toBe('Nguyễn Văn Tài - 0987654321');
+        expect(result.data.delivery_location).toBe('Kho tổng Viglacera Bắc Ninh');
+      }
+    });
   });
 
   describe('purchaseOrderSchema', () => {

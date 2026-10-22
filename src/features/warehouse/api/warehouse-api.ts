@@ -17,6 +17,10 @@ import type {
   MaterialCatalogFilterParams,
   ProductCatalogItem,
   ProductCatalogFilterParams,
+  MaterialDashboardData,
+  MaterialStockAlert,
+  MaterialCategorySummary,
+  TopConsumedMaterial,
 } from '@/features/warehouse/types';
 import type { MaterialFormValues, ProductFormValues } from '../validation/warehouse-schemas';
 
@@ -1464,6 +1468,7 @@ const PRODUCT_CATALOG_SELECT_COLUMNS = `
   name,
   product_type,
   unit_of_measure,
+  specifications,
   standard_cycle_time_mins,
   standard_labor_cost,
   base_sales_price,
@@ -1478,6 +1483,7 @@ interface ProductCatalogQueryResult {
   name: string;
   product_type: 'finished_good' | 'semi_finished' | 'by_product';
   unit_of_measure: string;
+  specifications: string | null;
   standard_cycle_time_mins: number | string | null;
   standard_labor_cost: number | string | null;
   base_sales_price: number | string;
@@ -1534,6 +1540,7 @@ export async function fetchProductsCatalog(
     name: row.name,
     product_type: row.product_type,
     unit_of_measure: row.unit_of_measure,
+    specifications: row.specifications || null,
     standard_cycle_time_mins: Number(row.standard_cycle_time_mins) || 0,
     standard_labor_cost: Number(row.standard_labor_cost) || 0,
     base_sales_price: Number(row.base_sales_price) || 0,
@@ -1557,6 +1564,7 @@ export async function createProduct(values: ProductFormValues): Promise<ProductC
     name: values.name.trim(),
     product_type: values.product_type,
     unit_of_measure: values.unit_of_measure.trim(),
+    specifications: values.specifications?.trim() || null,
     base_sales_price: values.base_sales_price,
     standard_cycle_time_mins: values.standard_cycle_time_mins,
     standard_labor_cost: values.standard_labor_cost,
@@ -1583,6 +1591,7 @@ export async function createProduct(values: ProductFormValues): Promise<ProductC
     name: row.name,
     product_type: row.product_type,
     unit_of_measure: row.unit_of_measure,
+    specifications: row.specifications || null,
     standard_cycle_time_mins: Number(row.standard_cycle_time_mins) || 0,
     standard_labor_cost: Number(row.standard_labor_cost) || 0,
     base_sales_price: Number(row.base_sales_price) || 0,
@@ -1605,6 +1614,7 @@ export async function updateProduct(
     name: values.name.trim(),
     product_type: values.product_type,
     unit_of_measure: values.unit_of_measure.trim(),
+    specifications: values.specifications?.trim() || null,
     base_sales_price: values.base_sales_price,
     standard_cycle_time_mins: values.standard_cycle_time_mins,
     standard_labor_cost: values.standard_labor_cost,
@@ -1633,6 +1643,7 @@ export async function updateProduct(
     name: row.name,
     product_type: row.product_type,
     unit_of_measure: row.unit_of_measure,
+    specifications: row.specifications || null,
     standard_cycle_time_mins: Number(row.standard_cycle_time_mins) || 0,
     standard_labor_cost: Number(row.standard_labor_cost) || 0,
     base_sales_price: Number(row.base_sales_price) || 0,
@@ -1665,6 +1676,281 @@ export async function deleteProduct(id: string): Promise<void> {
     }
     throw new Error(error.message);
   }
+}
+
+/**
+ * Fetch aggregated data for Materials Inventory Dashboard
+ */
+export async function fetchMaterialDashboardData(): Promise<MaterialDashboardData> {
+  const now = new Date();
+  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+  // 1. Fetch materials with specific columns
+  const materialsPromise = supabase
+    .from('materials')
+    .select('id, code, name, category, unit_of_measure, min_stock_level, max_stock_level, reorder_point, standard_cost, status')
+    .order('code', { ascending: true });
+
+  // 2. Fetch stock balances for material items
+  const balancesPromise = supabase
+    .from('inventory_stock_balance')
+    .select('item_id, warehouse_id, current_quantity, reserved_quantity')
+    .eq('item_type', 'material');
+
+  // 3. Fetch monthly material transactions
+  const txPromise = supabase
+    .from('inventory_transactions')
+    .select(TRANSACTION_SELECT_COLUMNS)
+    .eq('item_type', 'material')
+    .gte('created_at', firstDayOfMonth)
+    .order('created_at', { ascending: false });
+
+  // 4. Fetch recent material transactions (last 8)
+  const recentTxPromise = supabase
+    .from('inventory_transactions')
+    .select(TRANSACTION_SELECT_COLUMNS)
+    .eq('item_type', 'material')
+    .order('created_at', { ascending: false })
+    .limit(8);
+
+  const [
+    { data: materialsData, error: materialsErr },
+    { data: balancesData, error: balancesErr },
+    { data: monthlyTxData, error: txErr },
+    { data: recentTxData, error: recentTxErr },
+  ] = await Promise.all([materialsPromise, balancesPromise, txPromise, recentTxPromise]);
+
+  if (materialsErr) throw new Error(materialsErr.message);
+  if (balancesErr) throw new Error(balancesErr.message);
+  if (txErr) throw new Error(txErr.message);
+  if (recentTxErr) throw new Error(recentTxErr.message);
+
+  const materials = materialsData || [];
+  const balances = balancesData || [];
+  const monthlyTxs = monthlyTxData || [];
+
+  // Aggregated stock map by material_id
+  const stockMap = new Map<string, number>();
+  balances.forEach((b) => {
+    const prev = stockMap.get(b.item_id) || 0;
+    stockMap.set(b.item_id, prev + (Number(b.current_quantity) || 0));
+  });
+
+  // Calculate KPIs
+  let totalInventoryValue = 0;
+  let outOfStockCount = 0;
+  let lowStockCount = 0;
+  let overstockCount = 0;
+  let activeMaterials = 0;
+
+  const alerts: MaterialStockAlert[] = [];
+
+  const CATEGORY_MAP: Record<string, string> = {
+    raw_material: 'Nguyên vật liệu thô',
+    chemical: 'Hóa chất công nghiệp',
+    spare_part: 'Phụ tùng & Cơ điện',
+    packaging: 'Bao bì & Đóng gói',
+    fuel_energy: 'Nhiên liệu & Xăng dầu',
+    consumable: 'Vật tư tiêu hao & BHLĐ',
+    other: 'Vật tư khác',
+  };
+
+  const categoryBuckets: Record<
+    string,
+    { count: number; totalQty: number; totalVal: number; lowStock: number }
+  > = {};
+
+  Object.keys(CATEGORY_MAP).forEach((cat) => {
+    categoryBuckets[cat] = { count: 0, totalQty: 0, totalVal: 0, lowStock: 0 };
+  });
+
+  materials.forEach((m) => {
+    const isAct = m.status === 'active';
+    if (isAct) activeMaterials++;
+
+    const currStock = stockMap.get(m.id) || 0;
+    const stdCost = Number(m.standard_cost) || 0;
+    const minLvl = Number(m.min_stock_level) || 0;
+    const maxLvl = m.max_stock_level !== null ? Number(m.max_stock_level) : null;
+    const reorderPt = Number(m.reorder_point) || 0;
+
+    totalInventoryValue += Math.max(0, currStock) * stdCost;
+
+    if (isAct) {
+      if (currStock === 0) {
+        outOfStockCount++;
+      } else if (minLvl > 0 && currStock <= minLvl) {
+        lowStockCount++;
+      }
+
+      if (maxLvl !== null && maxLvl > 0 && currStock >= maxLvl) {
+        overstockCount++;
+      }
+    }
+
+    // Category stats
+    const catKey = m.category && m.category in categoryBuckets ? m.category : 'other';
+    const targetBucket = categoryBuckets[catKey] ?? categoryBuckets.other!;
+    targetBucket.count += 1;
+    targetBucket.totalQty += currStock;
+    targetBucket.totalVal += Math.max(0, currStock) * stdCost;
+    if (currStock <= minLvl && minLvl > 0) {
+      targetBucket.lowStock += 1;
+    }
+
+    // Check alerts
+    if (isAct && (currStock === 0 || (minLvl > 0 && currStock <= minLvl) || (reorderPt > 0 && currStock <= reorderPt))) {
+      let severity: MaterialStockAlert['severity'] = 'reorder_point';
+      if (currStock === 0) {
+        severity = 'out_of_stock';
+      } else if (minLvl > 0 && currStock <= minLvl) {
+        severity = 'critical_low';
+      }
+
+      const shortage = Math.max(0, (reorderPt || minLvl) - currStock);
+
+      alerts.push({
+        id: m.id,
+        code: m.code,
+        name: m.name,
+        category: CATEGORY_MAP[m.category] || m.category,
+        unit_of_measure: m.unit_of_measure,
+        current_stock: currStock,
+        min_stock_level: minLvl,
+        reorder_point: reorderPt,
+        shortage_quantity: shortage,
+        severity,
+      });
+    }
+  });
+
+  // Sort alerts: out of stock first, then by shortage_quantity descending
+  alerts.sort((a, b) => {
+    if (a.severity === 'out_of_stock' && b.severity !== 'out_of_stock') return -1;
+    if (b.severity === 'out_of_stock' && a.severity !== 'out_of_stock') return 1;
+    return b.shortage_quantity - a.shortage_quantity;
+  });
+
+  // Calculate monthly transactions (Inbound & Outbound)
+  let monthlyInboundQty = 0;
+  let monthlyInboundValue = 0;
+  let monthlyOutboundQty = 0;
+  let monthlyOutboundValue = 0;
+
+  const consumedMap = new Map<string, { qty: number; value: number }>();
+
+  interface RawTx {
+    id: string;
+    transaction_number: string;
+    warehouse_id: string;
+    item_type: 'material' | 'product' | 'byproduct';
+    item_id: string;
+    transaction_type: string;
+    quantity: number;
+    unit_cost: number;
+    reference_doc_type: string | null;
+    reference_doc_id: string | null;
+    notes: string | null;
+    created_by: string | null;
+    created_at: string;
+    warehouses?: { code: string; name: string } | null;
+    profiles?: { id: string; full_name: string } | null;
+  }
+
+  (monthlyTxs as unknown as RawTx[]).forEach((tx) => {
+    const qty = Math.abs(Number(tx.quantity) || 0);
+    const cost = Number(tx.unit_cost) || 0;
+    const val = qty * cost;
+
+    if (tx.transaction_type === 'inbound_receipt' || tx.quantity > 0) {
+      monthlyInboundQty += qty;
+      monthlyInboundValue += val;
+    } else {
+      monthlyOutboundQty += qty;
+      monthlyOutboundValue += val;
+
+      const prev = consumedMap.get(tx.item_id) || { qty: 0, value: 0 };
+      consumedMap.set(tx.item_id, {
+        qty: prev.qty + qty,
+        value: prev.value + val,
+      });
+    }
+  });
+
+  // Top consumed materials
+  const topConsumed: TopConsumedMaterial[] = [];
+  const materialMetaMap = new Map(materials.map((m) => [m.id, m]));
+
+  Array.from(consumedMap.entries())
+    .sort((a, b) => b[1].qty - a[1].qty)
+    .slice(0, 5)
+    .forEach(([id, stats]) => {
+      const meta = materialMetaMap.get(id);
+      if (meta) {
+        topConsumed.push({
+          material_id: id,
+          code: meta.code,
+          name: meta.name,
+          unit_of_measure: meta.unit_of_measure,
+          totalQuantity: stats.qty,
+          totalValue: stats.value,
+        });
+      }
+    });
+
+  // Format categories list
+  const categories: MaterialCategorySummary[] = Object.entries(categoryBuckets).map(
+    ([key, b]) => ({
+      category: key,
+      label: CATEGORY_MAP[key] || key,
+      materialCount: b.count,
+      totalQuantity: b.totalQty,
+      totalValue: b.totalVal,
+      lowStockCount: b.lowStock,
+    }),
+  );
+
+  // Format recent transactions
+  const recentTransactions: InventoryTransaction[] = (recentTxData as unknown as RawTx[] || []).map((t) => ({
+    id: t.id,
+    transaction_number: t.transaction_number,
+    warehouse_id: t.warehouse_id,
+    warehouse_code: t.warehouses?.code,
+    warehouse_name: t.warehouses?.name,
+    item_type: t.item_type,
+    item_id: t.item_id,
+    item_code: materialMetaMap.get(t.item_id)?.code || '---',
+    item_name: materialMetaMap.get(t.item_id)?.name || 'Vật tư',
+    transaction_type: t.transaction_type as InventoryTransaction['transaction_type'],
+    quantity: Number(t.quantity) || 0,
+    unit_cost: Number(t.unit_cost) || 0,
+    reference_doc_type: t.reference_doc_type,
+    reference_doc_id: t.reference_doc_id,
+    notes: t.notes,
+    created_by: t.created_by,
+    created_by_name: t.profiles?.full_name,
+    created_at: t.created_at,
+    unit_of_measure: materialMetaMap.get(t.item_id)?.unit_of_measure || '',
+  }));
+
+  return {
+    kpis: {
+      totalMaterials: materials.length,
+      activeMaterials,
+      outOfStockCount,
+      lowStockCount,
+      overstockCount,
+      totalInventoryValue,
+      monthlyInboundQty,
+      monthlyInboundValue,
+      monthlyOutboundQty,
+      monthlyOutboundValue,
+    },
+    alerts: alerts.slice(0, 15),
+    categories,
+    topConsumed,
+    recentTransactions,
+  };
 }
 
 

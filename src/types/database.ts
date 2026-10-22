@@ -14,6 +14,168 @@ export type Database = {
   }
   public: {
     Tables: {
+      production_patrol_areas: {
+        Row: {
+          id: string
+          area_code: string
+          name: string
+          line_id: string | null
+          qr_code: string
+          description: string | null
+          order_index: number
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          area_code: string
+          name: string
+          line_id?: string | null
+          qr_code: string
+          description?: string | null
+          order_index?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          area_code?: string
+          name?: string
+          line_id?: string | null
+          qr_code?: string
+          description?: string | null
+          order_index?: number
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      production_patrol_area_machines: {
+        Row: {
+          id: string
+          area_id: string
+          machine_id: string
+          sort_order: number
+          inspection_notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          area_id: string
+          machine_id: string
+          sort_order?: number
+          inspection_notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          area_id?: string
+          machine_id?: string
+          sort_order?: number
+          inspection_notes?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      production_patrol_logs: {
+        Row: {
+          id: string
+          area_id: string
+          shift_id: string | null
+          scanned_at: string
+          inspector_name: string
+          has_issue: boolean
+          checked_machines_count: number
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          area_id: string
+          shift_id?: string | null
+          scanned_at?: string
+          inspector_name: string
+          has_issue?: boolean
+          checked_machines_count?: number
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          area_id?: string
+          shift_id?: string | null
+          scanned_at?: string
+          inspector_name?: string
+          has_issue?: boolean
+          checked_machines_count?: number
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      production_patrol_incidents: {
+        Row: {
+          id: string
+          incident_code: string
+          patrol_log_id: string | null
+          area_id: string | null
+          machine_id: string
+          shift_id: string | null
+          reported_at: string
+          reporter_name: string
+          condition_type: string
+          description: string
+          resolution_type: 'resolved' | 'temporary_fix' | 'maintenance_scheduled'
+          maintenance_work_order_id: string | null
+          status: 'reported' | 'in_progress' | 'resolved' | 'closed'
+          incident_image_url: string | null
+          resolution_image_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          incident_code: string
+          patrol_log_id?: string | null
+          area_id?: string | null
+          machine_id: string
+          shift_id?: string | null
+          reported_at?: string
+          reporter_name: string
+          condition_type: string
+          description: string
+          resolution_type: 'resolved' | 'temporary_fix' | 'maintenance_scheduled'
+          maintenance_work_order_id?: string | null
+          status?: 'reported' | 'in_progress' | 'resolved' | 'closed'
+          incident_image_url?: string | null
+          resolution_image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          incident_code?: string
+          patrol_log_id?: string | null
+          area_id?: string | null
+          machine_id?: string
+          shift_id?: string | null
+          reported_at?: string
+          reporter_name?: string
+          condition_type?: string
+          description?: string
+          resolution_type?: 'resolved' | 'temporary_fix' | 'maintenance_scheduled'
+          maintenance_work_order_id?: string | null
+          status?: 'reported' | 'in_progress' | 'resolved' | 'closed'
+          incident_image_url?: string | null
+          resolution_image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -1780,6 +1942,7 @@ export type Database = {
           name: string
           product_type: string
           sku: string
+          specifications: string | null
           standard_cycle_time_mins: number | null
           standard_labor_cost: number | null
           status: string
@@ -1793,6 +1956,7 @@ export type Database = {
           name: string
           product_type: string
           sku: string
+          specifications?: string | null
           standard_cycle_time_mins?: number | null
           standard_labor_cost?: number | null
           status?: string
@@ -1806,6 +1970,7 @@ export type Database = {
           name?: string
           product_type?: string
           sku?: string
+          specifications?: string | null
           standard_cycle_time_mins?: number | null
           standard_labor_cost?: number | null
           status?: string
@@ -2244,10 +2409,13 @@ export type Database = {
       }
       sales_orders: {
         Row: {
+          carrier_name: string | null
           created_at: string
           created_by: string | null
           currency: string
           customer_id: string
+          delivery_location: string | null
+          driver_info: string | null
           id: string
           notes: string | null
           order_code: string
@@ -2259,12 +2427,16 @@ export type Database = {
           tax_amount: number
           total_amount: number
           updated_at: string
+          vehicle_plate: string | null
         }
         Insert: {
+          carrier_name?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
           customer_id: string
+          delivery_location?: string | null
+          driver_info?: string | null
           id?: string
           notes?: string | null
           order_code: string
@@ -2276,12 +2448,16 @@ export type Database = {
           tax_amount?: number
           total_amount?: number
           updated_at?: string
+          vehicle_plate?: string | null
         }
         Update: {
+          carrier_name?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
           customer_id?: string
+          delivery_location?: string | null
+          driver_info?: string | null
           id?: string
           notes?: string | null
           order_code?: string
@@ -2293,6 +2469,7 @@ export type Database = {
           tax_amount?: number
           total_amount?: number
           updated_at?: string
+          vehicle_plate?: string | null
         }
         Relationships: [
           {

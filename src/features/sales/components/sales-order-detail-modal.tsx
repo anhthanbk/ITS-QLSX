@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Printer, Calendar, User, FileText } from 'lucide-react';
+import { X, Printer, Calendar, User, FileText, Truck } from 'lucide-react';
 import { StatusBadge } from './sales-status-badge';
 import { Button } from '@/components/ui/button';
 import { useSalesOrderDetail } from '../hooks/use-sales-queries';
@@ -121,6 +121,32 @@ export const SalesOrderDetailModal: React.FC<SalesOrderDetailModalProps> = ({
                     <p>Ngày hẹn giao: <span className="text-foreground font-medium">{formatDate(order.promised_delivery_date)}</span></p>
                     <p>Thanh toán: <span className="text-foreground font-medium">{order.payment_terms || 'Theo thỏa thuận'}</span></p>
                     <p>Tiền tệ: <span className="text-foreground font-medium">{order.currency}</span></p>
+                  </div>
+                </div>
+
+                {/* Logistics Info Block */}
+                <div className="sm:col-span-2 pt-2 border-t border-border/60">
+                  <div className="flex items-center gap-2 font-medium text-foreground mb-1.5">
+                    <Truck className="h-4 w-4 text-primary" />
+                    <span>Thông tin Vận tải & Điều xe bốc hàng</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                    <div>
+                      <span className="block text-[11px] text-muted-foreground">Đơn vị vận tải:</span>
+                      <span className="text-foreground font-medium">{order.carrier_name || 'Chưa chỉ định'}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[11px] text-muted-foreground">Biển số xe:</span>
+                      <span className="text-foreground font-mono font-medium">{order.vehicle_plate || '—'}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[11px] text-muted-foreground">Tài xế & Liên hệ:</span>
+                      <span className="text-foreground font-medium">{order.driver_info || '—'}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[11px] text-muted-foreground">Địa điểm giao hàng:</span>
+                      <span className="text-foreground font-medium">{order.delivery_location || 'Kho bãi nhà máy'}</span>
+                    </div>
                   </div>
                 </div>
 

@@ -21,7 +21,7 @@ export const DashboardOverview: React.FC = () => {
   return (
     <div id="dashboard-root" className="w-full">
       <PageContainer
-        title="Tổng quan hệ thống"
+        title="Dashboard Điều Hành"
         description="Bảng điều khiển trung tâm và kiểm tra phân quyền truy cập"
       >
         <div className="space-y-6">
